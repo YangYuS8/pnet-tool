@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=PNet Telnet Handler
+Comment=Handle telnet:// links for PnetLab using kitty
+Exec=pnet-telnet %u
+Type=Application
+NoDisplay=true
+MimeType=x-scheme-handler/telnet;
+X-PNETTELNET-Note=Uses PATH to locate pnet-telnet (avoid hardcoded /usr/local). Re-run setup-linux.sh if moved.
