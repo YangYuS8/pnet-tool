@@ -58,4 +58,18 @@ export const home: Dictionaries["home"] = {
   statusFallback: {
     offline: "PNETLab is temporarily unavailable",
   },
+  terminal: {
+    openButton: "Open Telnet Session",
+    connectingButton: "Connecting…",
+    closeButton: "Close Session",
+    desktopOnlyHint: "Terminal access is only available in the desktop app.",
+    requireIp: "Please fill in the PNETLab IP above to start Telnet.",
+    status: {
+      idle: "Ready to connect",
+      connecting: "Connecting to device…",
+      connected: "Connected",
+      closed: "Session closed",
+      error: "Connection failed",
+    },
+  },
 };

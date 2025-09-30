@@ -58,4 +58,18 @@ export const home: Dictionaries["home"] = {
   statusFallback: {
     offline: "暂时无法连接 PNETLab",
   },
+  terminal: {
+    openButton: "打开 Telnet 会话",
+    connectingButton: "连接中…",
+    closeButton: "关闭会话",
+    desktopOnlyHint: "终端功能仅在桌面应用中可用。",
+    requireIp: "请先在上方填写 PNETLab IP 后再启动 Telnet。",
+    status: {
+      idle: "准备就绪",
+      connecting: "正在连接设备…",
+      connected: "连接成功",
+      closed: "会话已关闭",
+      error: "连接失败",
+    },
+  },
 };

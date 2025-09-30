@@ -7,3 +7,6 @@ ignoredBuiltDependencies:
   - msw
   - sharp
   - unrs-resolver
+
+onlyBuiltDependencies:
+  - node-pty

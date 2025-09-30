@@ -13,6 +13,7 @@ import {
 
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { TelnetTerminal } from "@/components/terminal/telnet-terminal";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -281,27 +282,21 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
         </header>
 
         <section className="flex flex-1 flex-col gap-6 px-6 py-6">
-          <Card className="flex min-h-[360px] flex-1 flex-col overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
+          <Card className="flex min-h-[480px] flex-1 flex-col overflow-hidden">
+            <CardHeader>
+              <div className="space-y-1">
                 <CardTitle>{dictionary.main.cardTitle}</CardTitle>
                 <CardDescription>{dictionary.main.cardDescription}</CardDescription>
               </div>
-              <Button variant="secondary" disabled>
-                <RadioTower className="mr-2 h-4 w-4" />
-                {dictionary.main.waitingButton}
-              </Button>
             </CardHeader>
-            <CardContent className="flex flex-1 flex-col items-center justify-center space-y-4 text-center text-sm text-muted-foreground">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed border-border/70">
-                <Loader2 className="h-10 w-10 animate-spin text-muted-foreground/60" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-base font-semibold text-foreground">
+            <CardContent className="flex flex-1 flex-col gap-4 p-6">
+              <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">
                   {dictionary.main.placeholderTitle}
                 </p>
                 <p>{dictionary.main.placeholderDescription}</p>
               </div>
+              <TelnetTerminal host={ip} port={23} dictionary={dictionary.terminal} />
               {status.state === "offline" && (
                 <p className="text-xs text-destructive/80">{statusMessage}</p>
               )}

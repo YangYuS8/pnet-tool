@@ -51,6 +51,20 @@ export type HomeDictionary = {
   statusFallback: {
     offline: string;
   };
+  terminal: {
+    openButton: string;
+    connectingButton: string;
+    closeButton: string;
+    desktopOnlyHint: string;
+    requireIp: string;
+    status: {
+      idle: string;
+      connecting: string;
+      connected: string;
+      closed: string;
+      error: string;
+    };
+  };
 };
 
 export type Dictionaries = {
