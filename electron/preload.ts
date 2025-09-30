@@ -31,6 +31,17 @@ type TerminalErrorPayload = {
   message: string;
 };
 
+type WindowStatePayload = {
+  isMaximized: boolean;
+  isFullScreen: boolean;
+  isFocused: boolean;
+};
+
+type TelnetLaunchRequest = {
+  host: string;
+  port?: number;
+};
+
 declare global {
   interface Window {
     desktopBridge: {
@@ -45,6 +56,17 @@ declare global {
         onData: (callback: (payload: TerminalDataPayload) => void) => () => void;
         onExit: (callback: (payload: TerminalExitPayload) => void) => () => void;
         onError: (callback: (payload: TerminalErrorPayload) => void) => () => void;
+      };
+      window?: {
+        minimize: () => void;
+        toggleMaximize: () => Promise<WindowStatePayload>;
+        close: () => void;
+        getState: () => Promise<WindowStatePayload>;
+        onStateChange: (callback: (payload: WindowStatePayload) => void) => () => void;
+      };
+      telnet?: {
+        ready: () => Promise<TelnetLaunchRequest[]>;
+        onRequests: (callback: (payload: TelnetLaunchRequest[]) => void) => () => void;
       };
     };
   }
@@ -91,6 +113,37 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.on("terminal:error", listener);
       return () => {
         ipcRenderer.removeListener("terminal:error", listener);
+      };
+    },
+  },
+  window: {
+    minimize: () => {
+      ipcRenderer.send("window:minimize");
+    },
+    toggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize") as Promise<WindowStatePayload>,
+    close: () => {
+      ipcRenderer.send("window:close");
+    },
+    getState: () => ipcRenderer.invoke("window:get-state") as Promise<WindowStatePayload>,
+    onStateChange: (callback: (payload: WindowStatePayload) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: WindowStatePayload) => {
+        callback(payload);
+      };
+      ipcRenderer.on("window:state", listener);
+      return () => {
+        ipcRenderer.removeListener("window:state", listener);
+      };
+    },
+  },
+  telnet: {
+    ready: () => ipcRenderer.invoke("telnet:bridge-ready") as Promise<TelnetLaunchRequest[]>,
+    onRequests: (callback: (payload: TelnetLaunchRequest[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: TelnetLaunchRequest[]) => {
+        callback(payload);
+      };
+      ipcRenderer.on("telnet:requests", listener);
+      return () => {
+        ipcRenderer.removeListener("telnet:requests", listener);
       };
     },
   },

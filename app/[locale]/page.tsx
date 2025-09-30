@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { DesktopWindowChrome } from "@/components/desktop/window-chrome";
 import { HomePage } from "@/components/home/home-page";
 import { LocaleHtmlUpdater } from "@/components/locale-html-updater";
 import { isLocale, type Locale, locales } from "@/lib/i18n/config";
@@ -29,7 +30,9 @@ export default async function LocaleHomePage({ params }: LocalePageProps) {
   return (
     <>
       <LocaleHtmlUpdater locale={locale} />
-      <HomePage dictionary={dictionary} locale={locale} />
+      <DesktopWindowChrome>
+        <HomePage dictionary={dictionary} locale={locale} />
+      </DesktopWindowChrome>
     </>
   );
 }

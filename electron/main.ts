@@ -8,6 +8,24 @@ const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
 
 let mainWindow: BrowserWindow | null = null;
 
+type WindowStatePayload = {
+  isMaximized: boolean;
+  isFullScreen: boolean;
+  isFocused: boolean;
+};
+
+function emitWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  const payload: WindowStatePayload = {
+    isMaximized: mainWindow.isMaximized(),
+    isFullScreen: mainWindow.isFullScreen(),
+    isFocused: mainWindow.isFocused(),
+  };
+  mainWindow.webContents.send("window:state", payload);
+}
+
 type TerminalDimensions = {
   cols?: number;
   rows?: number;
@@ -25,6 +43,64 @@ type TerminalSession = {
 };
 
 const terminalSessions = new Map<string, TerminalSession>();
+type TelnetLaunchRequest = {
+  host: string;
+  port?: number;
+};
+
+const pendingTelnetRequests: TelnetLaunchRequest[] = [];
+let telnetBridgeReady = false;
+
+function enqueueTelnetRequest(request: TelnetLaunchRequest) {
+  pendingTelnetRequests.push(request);
+  dispatchTelnetRequests();
+}
+
+function dispatchTelnetRequests() {
+  if (!telnetBridgeReady) {
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+  if (pendingTelnetRequests.length === 0) {
+    return;
+  }
+  const payload = pendingTelnetRequests.splice(0, pendingTelnetRequests.length);
+  mainWindow.webContents.send("telnet:requests", payload);
+}
+
+function parseTelnetUrl(rawUrl: string): TelnetLaunchRequest | null {
+  try {
+    const url = new URL(rawUrl.trim());
+    if (url.protocol !== "telnet:") {
+      return null;
+    }
+    const host = url.hostname;
+    if (!host) {
+      return null;
+    }
+    const portNumber = url.port ? Number.parseInt(url.port, 10) : undefined;
+    const normalizedPort =
+      typeof portNumber === "number" && Number.isFinite(portNumber) && portNumber > 0
+        ? portNumber
+        : undefined;
+    return {
+      host,
+      port: normalizedPort,
+    };
+  } catch (error) {
+    console.warn("Failed to parse telnet url", rawUrl, error);
+    return null;
+  }
+}
+
+function ingestTelnetUrl(rawUrl: string) {
+  const request = parseTelnetUrl(rawUrl);
+  if (request) {
+    enqueueTelnetRequest(request);
+  }
+}
 
 function getDefaultShell() {
   if (process.platform === "win32") {
@@ -77,10 +153,12 @@ function createMainWindow() {
     minWidth: 1024,
     minHeight: 640,
     title: "PNET Tool",
+    show: false,
+    frame: false,
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f5f5",
-    titleBarStyle: "hiddenInset",
     vibrancy: process.platform === "darwin" ? "under-window" : undefined,
-    trafficLightPosition: process.platform === "darwin" ? { x: 14, y: 16 } : undefined,
+    trafficLightPosition: undefined,
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,
@@ -89,21 +167,45 @@ function createMainWindow() {
     },
   });
 
+  telnetBridgeReady = false;
+
+  mainWindow.setMenuBarVisibility(false);
+
   const devServerURL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
 
-  if (isDev) {
-    mainWindow
-      .loadURL(devServerURL)
-      .catch((error) => console.error("Failed to load renderer:", error));
-  } else {
-    const rendererIndex = path.join(__dirname, "../renderer/index.html");
-    mainWindow
-      .loadFile(rendererIndex)
-      .catch((error) => console.error("Failed to load renderer:", error));
-  }
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show();
+    emitWindowState();
+  });
+
+  const loadPromise = isDev
+    ? mainWindow
+        .loadURL(devServerURL)
+        .catch((error) => console.error("Failed to load renderer:", error))
+    : mainWindow
+        .loadFile(path.join(__dirname, "../renderer/index.html"))
+        .catch((error) => console.error("Failed to load renderer:", error));
+
+  loadPromise?.catch((error) => {
+    console.error("Renderer load promise rejected", error);
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    telnetBridgeReady = false;
+  });
+
+  mainWindow.on("focus", emitWindowState);
+  mainWindow.on("blur", emitWindowState);
+  mainWindow.on("maximize", emitWindowState);
+  mainWindow.on("unmaximize", emitWindowState);
+  mainWindow.on("minimize", emitWindowState);
+  mainWindow.on("restore", emitWindowState);
+  mainWindow.on("enter-full-screen", emitWindowState);
+  mainWindow.on("leave-full-screen", emitWindowState);
+
+  mainWindow.webContents.on("did-finish-load", () => {
+    dispatchTelnetRequests();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -119,14 +221,38 @@ const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, commandLine) => {
+    for (const arg of commandLine) {
+      if (typeof arg === "string" && arg.startsWith("telnet://")) {
+        ingestTelnetUrl(arg);
+      }
+    }
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
   });
 
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    ingestTelnetUrl(url);
+  });
+
   app.whenReady().then(() => {
+    const registered = process.defaultApp && process.argv.length >= 2
+      ? app.setAsDefaultProtocolClient("telnet", process.execPath, [path.resolve(process.argv[1])])
+      : app.setAsDefaultProtocolClient("telnet");
+
+    if (!registered) {
+      console.warn("Failed to register telnet protocol handler. External telnet links may open the system default application.");
+    }
+
+    for (const arg of process.argv) {
+      if (typeof arg === "string" && arg.startsWith("telnet://")) {
+        ingestTelnetUrl(arg);
+      }
+    }
+
     createMainWindow();
 
     app.on("activate", () => {
@@ -262,3 +388,50 @@ ipcMain.on("terminal:input-signal", (_event, payload: { id: string; signal: stri
 
 ipcMain.handle("app:get-version", () => app.getVersion());
 ipcMain.handle("app:ping", () => "pong");
+
+ipcMain.handle("window:get-state", () => {
+  if (!mainWindow) {
+    return { isMaximized: false, isFullScreen: false, isFocused: false } satisfies WindowStatePayload;
+  }
+  return {
+    isMaximized: mainWindow.isMaximized(),
+    isFullScreen: mainWindow.isFullScreen(),
+    isFocused: mainWindow.isFocused(),
+  } satisfies WindowStatePayload;
+});
+
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) {
+    return { isMaximized: false, isFullScreen: false, isFocused: false } satisfies WindowStatePayload;
+  }
+  if (mainWindow.isFullScreen()) {
+    mainWindow.setFullScreen(false);
+  } else if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+  return {
+    isMaximized: mainWindow.isMaximized(),
+    isFullScreen: mainWindow.isFullScreen(),
+    isFocused: mainWindow.isFocused(),
+  } satisfies WindowStatePayload;
+});
+
+ipcMain.on("window:minimize", () => {
+  if (!mainWindow) {
+    return;
+  }
+  mainWindow.minimize();
+  emitWindowState();
+});
+
+ipcMain.on("window:close", () => {
+  mainWindow?.close();
+});
+
+ipcMain.handle("telnet:bridge-ready", () => {
+  telnetBridgeReady = true;
+  const payload = pendingTelnetRequests.splice(0, pendingTelnetRequests.length);
+  return payload;
+});

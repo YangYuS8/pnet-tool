@@ -8,17 +8,30 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { HomeDictionary } from "@/lib/i18n/dictionaries";
 
+export type TerminalStatus = "idle" | "connecting" | "connected" | "closed" | "error";
+
+export type TerminalStatusChange = {
+  status: TerminalStatus;
+  error?: string | null;
+};
+
 export type TelnetTerminalProps = {
   host: string;
   port: number;
   dictionary: HomeDictionary["terminal"];
+  autoConnectSignal?: number;
+  onStatusChange?: (payload: TerminalStatusChange) => void;
 };
-
-type TerminalStatus = "idle" | "connecting" | "connected" | "closed" | "error";
 
 type CleanupDisposer = (() => void) | null;
 
-export function TelnetTerminal({ host, port, dictionary }: TelnetTerminalProps) {
+export function TelnetTerminal({
+  host,
+  port,
+  dictionary,
+  autoConnectSignal,
+  onStatusChange,
+}: TelnetTerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddonClass | null>(null);
@@ -27,6 +40,7 @@ export function TelnetTerminal({ host, port, dictionary }: TelnetTerminalProps) 
   const exitDisposerRef = useRef<CleanupDisposer>(null);
   const errorDisposerRef = useRef<CleanupDisposer>(null);
   const resizeDisposerRef = useRef<CleanupDisposer>(null);
+  const autoConnectTokenRef = useRef<number | undefined>(autoConnectSignal);
 
   const [status, setStatus] = useState<TerminalStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +148,7 @@ export function TelnetTerminal({ host, port, dictionary }: TelnetTerminalProps) 
       },
     });
 
-  const fitAddon = new FitAddon();
+    const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
     terminalRef.current = terminal;
@@ -213,6 +227,32 @@ export function TelnetTerminal({ host, port, dictionary }: TelnetTerminalProps) 
       await cleanupSession(true);
     }
   }, [cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, port]);
+
+  useEffect(() => {
+    onStatusChange?.({ status, error });
+  }, [status, error, onStatusChange]);
+
+  useEffect(() => {
+    if (autoConnectSignal === undefined) {
+      autoConnectTokenRef.current = undefined;
+      return;
+    }
+    if (autoConnectTokenRef.current === autoConnectSignal) {
+      return;
+    }
+    autoConnectTokenRef.current = autoConnectSignal;
+    const initiate = async () => {
+      if (status === "connecting") {
+        return;
+      }
+      if (status === "connected") {
+        await cleanupSession(true);
+        setStatus("closed");
+      }
+      await handleConnect();
+    };
+    void initiate();
+  }, [autoConnectSignal, cleanupSession, handleConnect, status]);
 
   useEffect(() => {
     return () => {

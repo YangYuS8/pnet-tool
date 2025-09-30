@@ -64,6 +64,10 @@ export const home: Dictionaries["home"] = {
     closeButton: "Close Session",
     desktopOnlyHint: "Terminal access is only available in the desktop app.",
     requireIp: "Please fill in the PNETLab IP above to start Telnet.",
+    testButton: "Run Session Test",
+    autoLaunchOn: "Auto-connect on health pass",
+    autoLaunchOff: "Enable auto-connect",
+    autoLaunchDescription: "When enabled, a Telnet session will open automatically after a successful PNETLab health check.",
     status: {
       idle: "Ready to connect",
       connecting: "Connecting to device…",

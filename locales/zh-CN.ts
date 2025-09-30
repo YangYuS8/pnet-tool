@@ -64,6 +64,10 @@ export const home: Dictionaries["home"] = {
     closeButton: "关闭会话",
     desktopOnlyHint: "终端功能仅在桌面应用中可用。",
     requireIp: "请先在上方填写 PNETLab IP 后再启动 Telnet。",
+    testButton: "进行会话测试",
+    autoLaunchOn: "检测通过后自动连接",
+    autoLaunchOff: "开启自动连接",
+    autoLaunchDescription: "开启后，PNETLab 健康检查成功时会自动发起一次 Telnet 会话。",
     status: {
       idle: "准备就绪",
       connecting: "正在连接设备…",

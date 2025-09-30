@@ -57,6 +57,10 @@ export type HomeDictionary = {
     closeButton: string;
     desktopOnlyHint: string;
     requireIp: string;
+    testButton: string;
+    autoLaunchOn: string;
+    autoLaunchOff: string;
+    autoLaunchDescription: string;
     status: {
       idle: string;
       connecting: string;

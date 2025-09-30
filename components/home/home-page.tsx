@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Gauge,
@@ -9,11 +9,17 @@ import {
   ShieldQuestion,
   TerminalSquare,
   WifiOff,
+  PlugZap,
+  Sparkles,
 } from "lucide-react";
 
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { TelnetTerminal } from "@/components/terminal/telnet-terminal";
+import {
+  TelnetTerminal,
+  type TerminalStatus,
+  type TerminalStatusChange,
+} from "@/components/terminal/telnet-terminal";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -30,6 +36,7 @@ import type {
   ConnectionState,
   HomeDictionary,
 } from "@/lib/i18n/dictionaries";
+import { cn } from "@/lib/utils";
 
 export type ConnectionStatus = {
   state: ConnectionState;
@@ -80,6 +87,11 @@ async function requestHealth(ip: string, port: number): Promise<ConnectionStatus
 
 const DEFAULT_HTTP_PORT = 80;
 
+type TelnetLaunchRequest = {
+  host: string;
+  port?: number;
+};
+
 export type HomePageProps = {
   dictionary: HomeDictionary;
   locale: Locale;
@@ -88,8 +100,15 @@ export type HomePageProps = {
 export function HomePage({ dictionary, locale }: HomePageProps) {
   const [ip, setIp] = useState("");
   const [port, setPort] = useState(DEFAULT_HTTP_PORT);
+  const [telnetPort, setTelnetPort] = useState(23);
   const [status, setStatus] = useState<ConnectionStatus>({ state: "idle" });
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [autoConnectSignal, setAutoConnectSignal] = useState(0);
+  const [terminalStatus, setTerminalStatus] = useState<TerminalStatus>("idle");
+  const [terminalError, setTerminalError] = useState<string | null>(null);
+  const [autoConnectOnHealthPass, setAutoConnectOnHealthPass] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const lastAutoTriggerRef = useRef<ConnectionState | null>(null);
 
   const chipCopy = useMemo(
     () => ({
@@ -112,6 +131,17 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     }),
     [dictionary.sidebar.statusChip]
   );
+
+  useEffect(() => {
+    const available = typeof window !== "undefined" && Boolean(window.desktopBridge);
+    setIsDesktop(available);
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktop) {
+      setAutoConnectOnHealthPass(false);
+    }
+  }, [isDesktop]);
 
   const handleCheck = async () => {
     if (!ip) {
@@ -155,8 +185,91 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
 
   const statusMessage = status.message ?? dictionary.statusFallback.offline;
 
+  useEffect(() => {
+    if (!autoConnectOnHealthPass) {
+      lastAutoTriggerRef.current = status.state;
+      return;
+    }
+    if (status.state === "online" && lastAutoTriggerRef.current !== "online") {
+      setAutoConnectSignal((token) => token + 1);
+    }
+    lastAutoTriggerRef.current = status.state;
+  }, [autoConnectOnHealthPass, status.state]);
+
+  const handleTelnetStatusChange = useCallback((payload: TerminalStatusChange) => {
+    setTerminalStatus(payload.status);
+    setTerminalError(payload.error ?? null);
+  }, []);
+
+  const handleTestTelnet = useCallback(() => {
+    if (!ip) {
+      setStatus({ state: "offline", message: dictionary.errors.missingIp });
+      return;
+    }
+    setAutoConnectSignal((token) => token + 1);
+  }, [dictionary.errors.missingIp, ip]);
+
+  const isTestDisabled = useMemo(() => {
+    if (!isDesktop || !ip) {
+      return true;
+    }
+    return terminalStatus === "connecting" || terminalStatus === "connected";
+  }, [isDesktop, ip, terminalStatus]);
+
+  const handleTelnetLaunch = useCallback(
+    (request: TelnetLaunchRequest) => {
+      if (!request.host) {
+        return;
+      }
+      setIp(request.host);
+      setTelnetPort(request.port ?? 23);
+      setTerminalError(null);
+      setAutoConnectSignal((token) => token + 1);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const telnetBridge = window.desktopBridge?.telnet;
+    if (!telnetBridge) {
+      return;
+    }
+    let active = true;
+    telnetBridge
+      .ready()
+      .then((requests) => {
+        if (!active || !requests) {
+          return;
+        }
+        requests.forEach((request) => handleTelnetLaunch(request));
+      })
+      .catch((error) => {
+        console.error("Failed to initialize telnet bridge", error);
+      });
+
+    const unsubscribe = telnetBridge.onRequests?.((requests) => {
+      if (!active) {
+        return;
+      }
+      requests.forEach((request) => handleTelnetLaunch(request));
+    });
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [handleTelnetLaunch]);
+
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-background via-background to-muted/40">
+    <div
+      className={cn(
+        "flex min-h-screen bg-gradient-to-br from-background via-background to-muted/40",
+        isDesktop && "h-full min-h-0"
+      )}
+    >
       <aside className="hidden w-[320px] border-r bg-card/60 backdrop-blur lg:flex lg:flex-col">
         <div className="space-y-2 border-b px-6 py-6">
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -282,11 +395,40 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
         </header>
 
         <section className="flex flex-1 flex-col gap-6 px-6 py-6">
-          <Card className="flex min-h-[480px] flex-1 flex-col overflow-hidden">
-            <CardHeader>
+          <Card className="flex min-h-[520px] flex-1 flex-col overflow-hidden">
+            <CardHeader className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <CardTitle>{dictionary.main.cardTitle}</CardTitle>
                 <CardDescription>{dictionary.main.cardDescription}</CardDescription>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleTestTelnet}
+                  disabled={isTestDisabled}
+                  className="shadow-sm"
+                >
+                  <PlugZap className="h-4 w-4" />
+                  {dictionary.terminal.testButton}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={autoConnectOnHealthPass ? "secondary" : "outline"}
+                  aria-pressed={autoConnectOnHealthPass}
+                  onClick={() => setAutoConnectOnHealthPass((prev) => !prev)}
+                  className="shadow-sm"
+                  disabled={!isDesktop}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {autoConnectOnHealthPass
+                    ? dictionary.terminal.autoLaunchOn
+                    : dictionary.terminal.autoLaunchOff}
+                </Button>
+                <p className="max-w-[220px] text-right text-[11px] leading-snug text-muted-foreground">
+                  {dictionary.terminal.autoLaunchDescription}
+                </p>
               </div>
             </CardHeader>
             <CardContent className="flex flex-1 flex-col gap-4 p-6">
@@ -296,9 +438,17 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
                 </p>
                 <p>{dictionary.main.placeholderDescription}</p>
               </div>
-              <TelnetTerminal host={ip} port={23} dictionary={dictionary.terminal} />
-              {status.state === "offline" && (
-                <p className="text-xs text-destructive/80">{statusMessage}</p>
+              <TelnetTerminal
+                host={ip}
+                port={telnetPort}
+                dictionary={dictionary.terminal}
+                autoConnectSignal={autoConnectSignal}
+                onStatusChange={handleTelnetStatusChange}
+              />
+              {(terminalError || status.state === "offline") && (
+                <p className="text-xs text-destructive/80">
+                  {terminalError ?? statusMessage}
+                </p>
               )}
             </CardContent>
           </Card>
