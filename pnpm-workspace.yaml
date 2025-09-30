@@ -1,0 +1,9 @@
+packages:
+  - .
+
+ignoredBuiltDependencies:
+  - '@tailwindcss/oxide'
+  - electron
+  - msw
+  - sharp
+  - unrs-resolver

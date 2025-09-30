@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## 项目概览
 
-## Getting Started
+PNET Tool 是一个结合 Next.js 15 与 Electron 38 的桌面端应用雏形，用于对接 PNETLab 模拟器的路由设备命令窗口。界面使用 Tailwind CSS 4 与 shadcn/ui 组件体系，默认亮色主题并支持暗色切换。
 
-First, run the development server:
+当前实现的核心能力：
+
+- UI 布局：左侧为 PNETLab 配置面板，右侧为未来的终端工作区，占位设计参考 SecureFX。
+- 配置检测：可输入 PNETLab 的 IP/端口，通过服务器端 API (`/api/pnetlab/health`) 快速探测连通性并反馈响应时延。
+- 桌面框架：引入 Electron 主进程与预加载脚本，为后续 Telnet 会话与 IPC 奠定基础。
+
+## 快速开始
+
+安装依赖：
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+仅启动 Web 端（调试 UI）：
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+启动桌面端一体化调试（Next.js + Electron + TypeScript watch）：
 
-## Learn More
+```bash
+pnpm dev:desktop
+```
 
-To learn more about Next.js, take a look at the following resources:
+构建产物：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm build       # 同时构建 Web 与 Electron
+pnpm build:web   # 仅构建 Next.js
+pnpm build:electron
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 目录指引
 
-## Deploy on Vercel
+- `app/`：Next.js App Router 页面与 API。`app/page.tsx` 提供现代化仪表盘 UI，`app/api/pnetlab/health` 执行连通性检测。
+- `components/`：前端组件与主题封装，包含 shadcn 风格的 Button/Input/Card 等基础组件。
+- `electron/`：Electron 主进程与预加载脚本，TypeScript 通过独立的 `electron/tsconfig.json` 构建至 `dist-electron/`。
+- `docs/`：平台相关的外部脚本与文档。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 下一步路线
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 集成 node-pty + xterm.js，构建高性能 Telnet 终端体验。
+- 监听 PNETLab 网页事件，实现点击设备后自动打开对应会话。
+- 引入多会话管理、窗口布局（Tabs/Pane）与连接守护进程。
+
+欢迎根据实际需求继续拓展功能。系统化的敏捷迭代建议：先打通 Telnet 管道，再完善自动唤醒与 UI/UX 细节。

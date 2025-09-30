@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../dist-electron",
+    "rootDir": "./",
+  "module": "Node16",
+    "moduleResolution": "node16",
+    "target": "ES2020",
+    "noEmit": false,
+    "resolveJsonModule": true,
+    "types": ["node", "electron"],
+    "allowJs": false,
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["./**/*.ts"]
+}
