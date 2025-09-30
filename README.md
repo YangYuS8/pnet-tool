@@ -6,6 +6,7 @@ PNET Tool 是一个结合 Next.js 15 与 Electron 38 的桌面端应用雏形，
 
 - UI 布局：左侧为 PNETLab 配置面板，右侧为未来的终端工作区，占位设计参考 SecureFX。
 - 配置检测：可输入 PNETLab 的 IP/端口，通过服务器端 API (`/api/pnetlab/health`) 快速探测连通性并反馈响应时延。
+- 双语界面：支持 `zh-CN` 与 `en` 两种语言，通过 `/[locale]` 路径访问并在客户端使用语言开关即时切换。
 - 桌面框架：引入 Electron 主进程与预加载脚本，为后续 Telnet 会话与 IPC 奠定基础。
 
 ## 快速开始
@@ -38,7 +39,7 @@ pnpm build:electron
 
 ## 目录指引
 
-- `app/`：Next.js App Router 页面与 API。`app/page.tsx` 提供现代化仪表盘 UI，`app/api/pnetlab/health` 执行连通性检测。
+- `app/`：Next.js App Router 页面与 API。`app/page.tsx` 自动重定向至默认语言路径，`app/[locale]/page.tsx` 提供现代化仪表盘 UI，`app/api/pnetlab/health` 执行连通性检测。
 - `components/`：前端组件与主题封装，包含 shadcn 风格的 Button/Input/Card 等基础组件。
 - `electron/`：Electron 主进程与预加载脚本，TypeScript 通过独立的 `electron/tsconfig.json` 构建至 `dist-electron/`。
 - `docs/`：平台相关的外部脚本与文档。

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from "electron";
 
-const isDev = process.env.NODE_ENV === "development";
+const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
 
 let mainWindow: BrowserWindow | null = null;
 
