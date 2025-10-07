@@ -1,0 +1,47 @@
+# Maintainer: YangYuS8 <https://github.com/YangYuS8>
+
+pkgname=pnet-tool
+pkgver=0.1.4
+pkgrel=1
+pkgdesc="PNETLab 定制的 Telnet 客户端（Electron AppImage 形式）"
+arch=('x86_64')
+url="https://github.com/YangYuS8/pnet-tool"
+license=('custom')
+depends=('fuse2' 'xdg-utils' 'desktop-file-utils' 'gtk3')
+makedepends=('git' 'nodejs' 'pnpm' 'python' 'base-devel')
+options=('!strip')
+source=("git+https://github.com/YangYuS8/pnet-tool.git")
+sha256sums=('SKIP')
+install=packaging/arch/pnet-tool.install
+
+pkgver() {
+  cd "$srcdir/pnet-tool"
+  local ver
+  ver=$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\(.*\)",[[:space:]]*$/\1/p' package.json | head -n1)
+  printf '%s' "${ver:-0.1.4}"
+}
+
+prepare() {
+  cd "$srcdir"
+  mkdir -p pnpm-store
+}
+
+build() {
+  cd "$srcdir/pnet-tool"
+  export PNPM_HOME="$srcdir/pnpm-store"
+  export PATH="$PNPM_HOME:$PATH"
+  pnpm install --frozen-lockfile
+  pnpm run dist:appimage
+  rm -rf release/linux-unpacked
+}
+
+package() {
+  cd "$srcdir/pnet-tool"
+  local appimage="release/PNET Tool-${pkgver}.AppImage"
+
+  install -Dm755 "$appimage" "$pkgdir/opt/pnet-tool/pnet-tool.AppImage"
+  install -Dm755 packaging/arch/pnet-tool.sh "$pkgdir/usr/bin/pnet-tool"
+  install -Dm644 packaging/arch/pnet-tool.desktop "$pkgdir/usr/share/applications/pnet-tool.desktop"
+  install -Dm644 build/icons/pnet-tool.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/pnet-tool.svg"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/pnet-tool/README.md"
+}

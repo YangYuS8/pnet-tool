@@ -26,6 +26,7 @@ pnpm run dist:appimage
 - `electron-builder.yml` 中的 `protocols` 与 `.desktop` 配置会在 AppImage 集成时声明 `x-scheme-handler/telnet`。
 - 应用启动后，主进程会根据运行环境（包括 AppImage 的 `APPIMAGE` 环境变量）调用 `app.setAsDefaultProtocolClient("telnet", …)` 自动注册处理程序。
 - 当用户通过文件管理器或 AppImageLauncher 将 AppImage 集成到系统菜单时，即可在浏览器中点击 `telnet://` 链接并直接唤起 PNET Tool。
+- **注意**：如果仅双击运行 AppImage 而未执行“集成”操作，系统可能不会保存 `.desktop` 条目。此时需要手动复制 `packaging/arch/pnet-tool.desktop` 至 `~/.local/share/applications/`，或参考《docs/setup/manjaro-install.md》使用 PKGBUILD 进行安装。
 
 ## 产物位置
 

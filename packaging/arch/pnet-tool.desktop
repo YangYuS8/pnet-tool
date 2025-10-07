@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=PNET Tool
+Comment=Dedicated Telnet client for PNETLab
+Exec=pnet-tool %u
+Terminal=false
+Type=Application
+Categories=Network;TerminalEmulator;
+Icon=pnet-tool
+MimeType=x-scheme-handler/telnet;
+StartupNotify=true
