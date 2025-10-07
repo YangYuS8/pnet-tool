@@ -1,0 +1,39 @@
+appId: net.yangyus8.pnettool
+productName: PNET Tool
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist-electron/**/*
+  - package.json
+  - pnpm-lock.yaml
+  - node_modules/**/*
+  - "!**/*.ts"
+  - "!app/**"
+  - "!components/**"
+  - "!docs/**"
+  - "!electron/**"
+  - "!locales/**"
+  - "!scripts/**"
+  - "!lib/**"
+  - "!dist-electron/**/*.tsbuildinfo"
+extraMetadata:
+  main: dist-electron/main.js
+linux:
+  icon: build/icons/pnet-tool.svg
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Network
+  executableName: pnet-tool
+  desktop:
+    Name: PNET Tool
+    Comment: Dedicated telnet client for PNETLab
+    MimeType: x-scheme-handler/telnet;
+protocols:
+  - name: Telnet Protocol
+    schemes:
+      - telnet
+asar: true
+npmRebuild: false

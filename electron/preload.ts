@@ -42,6 +42,19 @@ type TelnetLaunchRequest = {
   port?: number;
 };
 
+type PnetlabHealthRequest = {
+  ip: string;
+  port?: number;
+};
+
+type PnetlabHealthResponse = {
+  ok: boolean;
+  latencyMs?: number;
+  status?: number;
+  statusText?: string;
+  message?: string;
+};
+
 declare global {
   interface Window {
     desktopBridge: {
@@ -67,6 +80,9 @@ declare global {
       telnet?: {
         ready: () => Promise<TelnetLaunchRequest[]>;
         onRequests: (callback: (payload: TelnetLaunchRequest[]) => void) => () => void;
+      };
+      pnetlab?: {
+        checkHealth: (payload: PnetlabHealthRequest) => Promise<PnetlabHealthResponse>;
       };
     };
   }
@@ -146,5 +162,9 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.removeListener("telnet:requests", listener);
       };
     },
+  },
+  pnetlab: {
+    checkHealth: (payload: PnetlabHealthRequest) =>
+      ipcRenderer.invoke("pnetlab:health-check", payload) as Promise<PnetlabHealthResponse>,
   },
 });

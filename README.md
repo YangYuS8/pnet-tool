@@ -32,10 +32,13 @@ pnpm dev:desktop
 构建产物：
 
 ```bash
-pnpm build       # 同时构建 Web 与 Electron
+pnpm build       # 构建 Electron 桌面版（含静态渲染层）
 pnpm build:web   # 仅构建 Next.js
 pnpm build:electron
+pnpm run dist:appimage  # 产出 Linux AppImage 安装包
 ```
+
+更多打包细节见 `docs/setup/appimage-build.md`。
 
 ## 目录指引
 

@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  DEFAULT_PNETLAB_PORT,
+  DEFAULT_PNETLAB_TIMEOUT,
+  probePnetlabHealth,
+  sanitizePnetlabHost,
+} from "@/lib/pnetlab/health";
+
 type HealthRequest = {
   ip?: string;
   port?: number;
 };
-
-const DEFAULT_TIMEOUT = 4000;
-const DEFAULT_PORT = 80;
-
-function sanitizeHost(host: string): boolean {
-  return /^[a-zA-Z0-9.-]+$/.test(host);
-}
 
 export async function POST(request: NextRequest) {
   let payload: HealthRequest;
@@ -25,14 +25,14 @@ export async function POST(request: NextRequest) {
 
   const { ip, port } = payload ?? {};
 
-  if (!ip || typeof ip !== "string" || !sanitizeHost(ip)) {
+  if (!ip || typeof ip !== "string" || !sanitizePnetlabHost(ip)) {
     return NextResponse.json(
       { ok: false, message: "请提供有效的 PNETLab IP 地址" },
       { status: 400 }
     );
   }
 
-  const portNumber = Number.isInteger(port) ? Number(port) : DEFAULT_PORT;
+  const portNumber = Number.isInteger(port) ? Number(port) : DEFAULT_PNETLAB_PORT;
 
   if (portNumber <= 0 || portNumber > 65535) {
     return NextResponse.json(
@@ -41,35 +41,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const targetUrl = `http://${ip}:${portNumber}/`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
-  const startedAt = performance.now();
+  const result = await probePnetlabHealth(ip, portNumber, DEFAULT_PNETLAB_TIMEOUT);
 
-  try {
-    const response = await fetch(targetUrl, {
-      method: "HEAD",
-      signal: controller.signal,
-    });
-
-    const latencyMs = Math.round(performance.now() - startedAt);
-    const reachable = response.ok || response.status < 500;
-
-    return NextResponse.json({
-      ok: reachable,
-      status: response.status,
-      statusText: response.statusText,
-      latencyMs,
-    });
-  } catch (error) {
+  if (!result.ok) {
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "PNETLab 无法连接",
+        message: result.message,
+        status: result.status,
+        statusText: result.statusText,
       },
-      { status: 504 }
+      { status: result.status ?? 504 }
     );
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  return NextResponse.json({
+    ok: true,
+    status: result.status,
+    statusText: result.statusText,
+    latencyMs: result.latencyMs,
+  });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Gauge,
@@ -53,6 +53,30 @@ const stateChipTone: Record<ConnectionState, string> = {
 };
 
 async function requestHealth(ip: string, port: number): Promise<ConnectionStatus> {
+  if (typeof window !== "undefined") {
+    const desktopBridge = window.desktopBridge;
+    const checkHealth = desktopBridge?.pnetlab?.checkHealth;
+
+    if (typeof checkHealth === "function") {
+      const result = await checkHealth({ ip, port });
+
+      if (!result.ok) {
+        return {
+          state: "offline",
+          message: result.message,
+          httpStatus: result.status,
+        };
+      }
+
+      return {
+        state: "online",
+        latencyMs: result.latencyMs,
+        httpStatus: result.status,
+        message: result.statusText,
+      };
+    }
+  }
+
   const response = await fetch("/api/pnetlab/health", {
     method: "POST",
     headers: {
@@ -389,7 +413,16 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               {dictionary.navigation.initButton}
             </Button>
-            <LocaleSwitcher copy={dictionary.navigation.languageSwitch} />
+            <Suspense
+              fallback={
+                <div
+                  className="h-10 w-24 animate-pulse rounded-md border border-dashed border-border/60 bg-muted/40"
+                  aria-hidden
+                />
+              }
+            >
+              <LocaleSwitcher copy={dictionary.navigation.languageSwitch} />
+            </Suspense>
             <ThemeToggle />
           </div>
         </header>
