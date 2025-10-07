@@ -20,6 +20,7 @@ import {
   type TerminalStatus,
   type TerminalStatusChange,
 } from "@/components/terminal/telnet-terminal";
+import { SessionTabs } from "@/components/home/session-tabs";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -110,10 +111,23 @@ async function requestHealth(ip: string, port: number): Promise<ConnectionStatus
 }
 
 const DEFAULT_HTTP_PORT = 80;
+const DEFAULT_TELNET_PORT = 23;
 
 type TelnetLaunchRequest = {
   host: string;
   port?: number;
+};
+
+type ManagedSession = {
+  key: string;
+  sessionId?: string;
+  host: string;
+  port: number;
+  autoConnectToken: number;
+  status: TerminalStatus;
+  error: string | null;
+  disposeOnUnmount: boolean;
+  isDetaching?: boolean;
 };
 
 export type HomePageProps = {
@@ -124,15 +138,61 @@ export type HomePageProps = {
 export function HomePage({ dictionary, locale }: HomePageProps) {
   const [ip, setIp] = useState("");
   const [port, setPort] = useState(DEFAULT_HTTP_PORT);
-  const [telnetPort, setTelnetPort] = useState(23);
   const [status, setStatus] = useState<ConnectionStatus>({ state: "idle" });
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
-  const [autoConnectSignal, setAutoConnectSignal] = useState(0);
-  const [terminalStatus, setTerminalStatus] = useState<TerminalStatus>("idle");
-  const [terminalError, setTerminalError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ManagedSession[]>([]);
+  const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
   const [autoConnectOnHealthPass, setAutoConnectOnHealthPass] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const lastAutoTriggerRef = useRef<ConnectionState | null>(null);
+  const sessionsRef = useRef<ManagedSession[]>([]);
+  const activeKeyRef = useRef<string | null>(null);
+  const sessionCounterRef = useRef(0);
+  const autoConnectTokenRef = useRef(1);
+
+  const generateSessionKey = useCallback(() => {
+    sessionCounterRef.current += 1;
+    return `session-${Date.now()}-${sessionCounterRef.current}`;
+  }, []);
+
+  const generateAutoToken = useCallback(() => {
+    const nextToken = autoConnectTokenRef.current;
+    autoConnectTokenRef.current += 1;
+    return nextToken;
+  }, []);
+
+  const createSessionEntry = useCallback(
+    (hostValue: string, portValue?: number) => {
+      const trimmedHost = hostValue.trim();
+      if (!trimmedHost) {
+        setStatus({ state: "offline", message: dictionary.errors.missingIp });
+        return null;
+      }
+
+      const portNumber =
+        typeof portValue === "number" && Number.isFinite(portValue) && portValue > 0
+          ? portValue
+          : DEFAULT_TELNET_PORT;
+
+      const key = generateSessionKey();
+      const autoToken = generateAutoToken();
+
+      const newSession: ManagedSession = {
+        key,
+        host: trimmedHost,
+        port: portNumber,
+        autoConnectToken: autoToken,
+        status: "idle",
+        error: null,
+        disposeOnUnmount: true,
+      };
+
+      setSessions((prev) => [...prev, newSession]);
+      setActiveSessionKey(key);
+      return key;
+    },
+    [dictionary.errors.missingIp, generateAutoToken, generateSessionKey]
+  );
 
   const chipCopy = useMemo(
     () => ({
@@ -166,6 +226,14 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
       setAutoConnectOnHealthPass(false);
     }
   }, [isDesktop]);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    activeKeyRef.current = activeSessionKey;
+  }, [activeSessionKey]);
 
   const handleCheck = async () => {
     if (!ip) {
@@ -209,36 +277,68 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
 
   const statusMessage = status.message ?? dictionary.statusFallback.offline;
 
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.key === activeSessionKey) ?? null,
+    [activeSessionKey, sessions]
+  );
+
+  const terminalErrorMessage = activeSession?.error ?? (status.state === "offline" ? statusMessage : null);
+
   useEffect(() => {
     if (!autoConnectOnHealthPass) {
       lastAutoTriggerRef.current = status.state;
       return;
     }
-    if (status.state === "online" && lastAutoTriggerRef.current !== "online") {
-      setAutoConnectSignal((token) => token + 1);
+    if (status.state === "online" && lastAutoTriggerRef.current !== "online" && ip) {
+      createSessionEntry(ip, DEFAULT_TELNET_PORT);
     }
     lastAutoTriggerRef.current = status.state;
-  }, [autoConnectOnHealthPass, status.state]);
+  }, [autoConnectOnHealthPass, createSessionEntry, ip, status.state]);
 
-  const handleTelnetStatusChange = useCallback((payload: TerminalStatusChange) => {
-    setTerminalStatus(payload.status);
-    setTerminalError(payload.error ?? null);
-  }, []);
+  const handleSessionStatusChange = useCallback(
+    (key: string) => (payload: TerminalStatusChange) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.key === key
+            ? {
+                ...session,
+                status: payload.status,
+                error: payload.error ?? null,
+              }
+            : session
+        )
+      );
+    },
+    []
+  );
+
+  const handleSessionCreated = useCallback(
+    (key: string) => (sessionId: string) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.key === key && session.sessionId !== sessionId
+            ? {
+                ...session,
+                sessionId,
+              }
+            : session
+        )
+      );
+    },
+    []
+  );
 
   const handleTestTelnet = useCallback(() => {
     if (!ip) {
       setStatus({ state: "offline", message: dictionary.errors.missingIp });
       return;
     }
-    setAutoConnectSignal((token) => token + 1);
-  }, [dictionary.errors.missingIp, ip]);
+    createSessionEntry(ip, DEFAULT_TELNET_PORT);
+  }, [createSessionEntry, dictionary.errors.missingIp, ip]);
 
   const isTestDisabled = useMemo(() => {
-    if (!isDesktop || !ip) {
-      return true;
-    }
-    return terminalStatus === "connecting" || terminalStatus === "connected";
-  }, [isDesktop, ip, terminalStatus]);
+    return !isDesktop || !ip.trim();
+  }, [isDesktop, ip]);
 
   const handleTelnetLaunch = useCallback(
     (request: TelnetLaunchRequest) => {
@@ -246,11 +346,109 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
         return;
       }
       setIp(request.host);
-      setTelnetPort(request.port ?? 23);
-      setTerminalError(null);
-      setAutoConnectSignal((token) => token + 1);
+      createSessionEntry(request.host, request.port);
+    },
+    [createSessionEntry]
+  );
+
+  const handleSelectSession = useCallback((key: string) => {
+    setActiveSessionKey(key);
+  }, []);
+
+  const handleCloseSession = useCallback(
+    async (key: string) => {
+      const target = sessionsRef.current.find((session) => session.key === key);
+      const sessionId = target?.sessionId;
+
+      if (sessionId && window.desktopBridge?.terminal) {
+        try {
+          await window.desktopBridge.terminal.dispose(sessionId);
+        } catch (error) {
+          console.error("Failed to dispose terminal session", error);
+        }
+      }
+
+      setSessions((prev) => {
+        const next = prev.filter((session) => session.key !== key);
+        if (activeKeyRef.current === key) {
+          const fallback = next[next.length - 1] ?? null;
+          setActiveSessionKey(fallback?.key ?? null);
+        }
+        return next;
+      });
     },
     []
+  );
+
+  const handleDetachSession = useCallback(
+    async (key: string) => {
+      const target = sessionsRef.current.find((session) => session.key === key);
+      if (!target || !target.sessionId) {
+        return;
+      }
+
+      const openSessionWindow = window.desktopBridge?.window?.openSessionWindow;
+      if (!openSessionWindow) {
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.key === key
+              ? {
+                  ...session,
+                  error: dictionary.terminal.desktopOnlyHint,
+                }
+              : session
+          )
+        );
+        return;
+      }
+
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.key === key
+            ? {
+                ...session,
+                isDetaching: true,
+                disposeOnUnmount: false,
+              }
+            : session
+        )
+      );
+
+      const titleLabel = target.host
+        ? `${target.host}${target.port ? `:${target.port}` : ""}`
+        : target.sessionId;
+
+      try {
+        const success = await openSessionWindow({ sessionId: target.sessionId, title: titleLabel });
+        if (!success) {
+          throw new Error("Detached window request was rejected");
+        }
+
+        setSessions((prev) => {
+          const next = prev.filter((session) => session.key !== key);
+          if (activeKeyRef.current === key) {
+            const fallback = next[next.length - 1] ?? null;
+            setActiveSessionKey(fallback?.key ?? null);
+          }
+          return next;
+        });
+      } catch (error) {
+        console.error("Failed to detach session", error);
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.key === key
+              ? {
+                  ...session,
+                  isDetaching: false,
+                  disposeOnUnmount: true,
+                  error: dictionary.terminal.desktopOnlyHint,
+                }
+              : session
+          )
+        );
+      }
+    },
+    [dictionary.terminal.desktopOnlyHint]
   );
 
   useEffect(() => {
@@ -471,17 +669,54 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
                 </p>
                 <p>{dictionary.main.placeholderDescription}</p>
               </div>
-              <TelnetTerminal
-                host={ip}
-                port={telnetPort}
-                dictionary={dictionary.terminal}
-                autoConnectSignal={autoConnectSignal}
-                onStatusChange={handleTelnetStatusChange}
-              />
-              {(terminalError || status.state === "offline") && (
-                <p className="text-xs text-destructive/80">
-                  {terminalError ?? statusMessage}
-                </p>
+              <div className="flex flex-1 flex-col gap-3">
+                <SessionTabs
+                  sessions={sessions.map((session) => ({
+                    key: session.key,
+                    host: session.host,
+                    port: session.port,
+                    status: session.status,
+                    isActive: session.key === activeSessionKey,
+                    isDetaching: session.isDetaching,
+                  }))}
+                  dictionary={dictionary.terminal}
+                  onSelect={handleSelectSession}
+                  onClose={handleCloseSession}
+                  onDetach={handleDetachSession}
+                />
+
+                {sessions.length > 0 && (
+                  <div className="relative flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner min-h-[360px]">
+                    {sessions.map((session) => {
+                      const isActive = session.key === activeSessionKey;
+                      return (
+                        <div
+                          key={session.key}
+                          className={cn(
+                            "absolute inset-0 flex flex-col transition-opacity duration-200",
+                            isActive ? "z-10 opacity-100" : "pointer-events-none opacity-0"
+                          )}
+                          aria-hidden={!isActive}
+                        >
+                          <TelnetTerminal
+                            host={session.host}
+                            port={session.port}
+                            dictionary={dictionary.terminal}
+                            autoConnectSignal={session.autoConnectToken}
+                            onStatusChange={handleSessionStatusChange(session.key)}
+                            onSessionCreated={handleSessionCreated(session.key)}
+                            sessionId={session.sessionId}
+                            isVisible={isActive}
+                            disposeOnUnmount={session.disposeOnUnmount}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {terminalErrorMessage && (
+                <p className="text-xs text-destructive/80">{terminalErrorMessage}</p>
               )}
             </CardContent>
           </Card>

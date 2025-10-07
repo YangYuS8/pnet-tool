@@ -72,6 +72,8 @@ async function probePnetlabHealth(
 }
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
+const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
+const PRELOAD_PATH = path.join(__dirname, "preload.js");
 
 if (!isDev) {
   protocol.registerSchemesAsPrivileged([
@@ -142,6 +144,9 @@ type TerminalLaunchOptions = {
 type TerminalSession = {
   pty: IPty;
   sender: Electron.WebContents;
+  host?: string;
+  port?: number;
+  destroyListener?: () => void;
 };
 
 const terminalSessions = new Map<string, TerminalSession>();
@@ -157,6 +162,7 @@ type PnetlabHealthCheckPayload = {
 
 const pendingTelnetRequests: TelnetLaunchRequest[] = [];
 let telnetBridgeReady = false;
+const sessionWindows = new Set<BrowserWindow>();
 
 function enqueueTelnetRequest(request: TelnetLaunchRequest) {
   pendingTelnetRequests.push(request);
@@ -247,13 +253,101 @@ function disposeTerminalSession(id: string) {
   } catch (error) {
     console.error("Failed to dispose terminal session", id, error);
   }
+  if (session.destroyListener) {
+    try {
+      session.sender.removeListener("destroyed", session.destroyListener);
+    } catch (error) {
+      console.warn("Failed to detach destroy listener", id, error);
+    }
+  }
   terminalSessions.delete(id);
   return true;
 }
 
-function createMainWindow() {
-  const preloadPath = path.join(__dirname, "preload.js");
+function attachSessionToSender(id: string, sender: Electron.WebContents) {
+  const session = terminalSessions.get(id);
+  if (!session) {
+    throw new Error(`Terminal session ${id} not found`);
+  }
 
+  if (session.destroyListener) {
+    try {
+      session.sender.removeListener("destroyed", session.destroyListener);
+    } catch (error) {
+      console.warn("Failed to remove previous destroy listener", id, error);
+    }
+  }
+
+  const destroyListener = () => {
+    disposeTerminalSession(id);
+  };
+
+  sender.on("destroyed", destroyListener);
+
+  session.sender = sender;
+  session.destroyListener = destroyListener;
+
+  return true;
+}
+
+function createDetachedSessionWindow(sessionId: string, title?: string) {
+  const session = terminalSessions.get(sessionId);
+  if (!session) {
+    throw new Error(`Unable to detach unknown session ${sessionId}`);
+  }
+
+  const windowTitle =
+    title ?? (session.host ? `Telnet ${session.host}${session.port ? `:${session.port}` : ""}` : "Telnet Session");
+
+  const detachedWindow = new BrowserWindow({
+    width: 1080,
+    height: 720,
+    minWidth: 820,
+    minHeight: 520,
+    title: windowTitle,
+    show: false,
+    frame: false,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f5f5",
+    webPreferences: {
+      preload: PRELOAD_PATH,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+
+  sessionWindows.add(detachedWindow);
+
+  detachedWindow.once("ready-to-show", () => {
+    if (!detachedWindow.isDestroyed()) {
+      detachedWindow.show();
+    }
+  });
+
+  detachedWindow.on("closed", () => {
+    sessionWindows.delete(detachedWindow);
+  });
+
+  const queryParams = new URLSearchParams({ sessionId });
+  if (session.host) {
+    queryParams.set("host", session.host);
+  }
+  if (session.port) {
+    queryParams.set("port", String(session.port));
+  }
+
+  const targetUrl = isDev
+    ? `${DEV_SERVER_URL.replace(/\/$/, "")}/session?${queryParams.toString()}`
+    : `app://-/session/index.html?${queryParams.toString()}`;
+
+  detachedWindow
+    .loadURL(targetUrl)
+    .catch((error) => console.error("Failed to load detached session window", error));
+
+  return detachedWindow;
+}
+
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -267,7 +361,7 @@ function createMainWindow() {
     vibrancy: process.platform === "darwin" ? "under-window" : undefined,
     trafficLightPosition: undefined,
     webPreferences: {
-      preload: preloadPath,
+      preload: PRELOAD_PATH,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
@@ -278,8 +372,6 @@ function createMainWindow() {
 
   mainWindow.setMenuBarVisibility(false);
 
-  const devServerURL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
-
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
     emitWindowState();
@@ -289,7 +381,7 @@ function createMainWindow() {
 
   if (isDev) {
     loadPromise = mainWindow
-      .loadURL(devServerURL)
+      .loadURL(DEV_SERVER_URL)
       .catch((error) => console.error("Failed to load renderer:", error));
   } else {
     loadPromise = mainWindow
@@ -451,12 +543,22 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
       env: process.env,
     });
 
-    terminalSessions.set(id, { pty, sender });
+    const session: TerminalSession = {
+      pty,
+      sender,
+      host: rawOptions.host,
+      port: rawOptions.port,
+    };
+
+    terminalSessions.set(id, session);
+    attachSessionToSender(id, sender);
 
     const safeSend = (channel: string, payload: Record<string, unknown>) => {
-      if (!sender.isDestroyed()) {
-        sender.send(channel, payload);
+      const currentSession = terminalSessions.get(id);
+      if (!currentSession || currentSession.sender.isDestroyed()) {
+        return;
       }
+      currentSession.sender.send(channel, payload);
     };
 
     pty.onData((data) => {
@@ -466,10 +568,6 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
     pty.onExit((exit) => {
       disposeTerminalSession(id);
       safeSend("terminal:exit", { id, exitCode: exit.exitCode, signal: exit.signal });
-    });
-
-    sender.once("destroyed", () => {
-      disposeTerminalSession(id);
     });
 
     if (rawOptions.host) {
@@ -498,6 +596,50 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
     }
     throw error;
   }
+});
+
+ipcMain.handle(
+  "terminal:attach",
+  (event, payload: { id?: string; dimensions?: TerminalDimensions } = {}) => {
+    const id = typeof payload.id === "string" ? payload.id : "";
+    if (!id) {
+      return false;
+    }
+    const session = terminalSessions.get(id);
+    if (!session) {
+      return false;
+    }
+
+    attachSessionToSender(id, event.sender);
+
+    if (payload.dimensions) {
+      const cols = sanitizeDimension(payload.dimensions.cols, session.pty.cols, 2, 500);
+      const rows = sanitizeDimension(payload.dimensions.rows, session.pty.rows, 1, 200);
+      try {
+        session.pty.resize(cols, rows);
+      } catch (error) {
+        console.error("Failed to resize terminal during attach", id, error);
+      }
+    }
+
+    return true;
+  }
+);
+
+ipcMain.handle("terminal:describe", (_event, payload: { id?: string } = {}) => {
+  const id = typeof payload.id === "string" ? payload.id : "";
+  if (!id) {
+    return null;
+  }
+  const session = terminalSessions.get(id);
+  if (!session) {
+    return null;
+  }
+  return {
+    id,
+    host: session.host,
+    port: session.port,
+  } satisfies { id: string; host?: string; port?: number };
 });
 
 ipcMain.handle("terminal:dispose", (_event, id: string) => disposeTerminalSession(id));
@@ -576,6 +718,23 @@ ipcMain.handle("window:toggle-maximize", () => {
     isFullScreen: mainWindow.isFullScreen(),
     isFocused: mainWindow.isFocused(),
   } satisfies WindowStatePayload;
+});
+
+ipcMain.handle("window:open-session", (_event, payload: { sessionId?: string; title?: string } = {}) => {
+  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
+  if (!sessionId) {
+    return false;
+  }
+  if (!terminalSessions.has(sessionId)) {
+    return false;
+  }
+  try {
+    createDetachedSessionWindow(sessionId, payload.title);
+    return true;
+  } catch (error) {
+    console.error("Failed to open detached session window", sessionId, error);
+    return false;
+  }
 });
 
 ipcMain.on("window:minimize", () => {

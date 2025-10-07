@@ -75,5 +75,18 @@ export const home: Dictionaries["home"] = {
       closed: "Session closed",
       error: "Connection failed",
     },
+    sessionTabs: {
+      headerLabel: "Telnet Sessions",
+      detachAction: "Pop out",
+      closeAction: "Close",
+      emptyTitle: "No Telnet sessions yet",
+      emptyDescription:
+        "Launch a session from the sidebar or via PNETLab, then manage or detach them here.",
+    },
+    detachedWindow: {
+      title: "Detached Telnet Session",
+      subtitle: "This window stays active even if you close the tab in the main app.",
+      closeHint: "Close this window or press Ctrl+W to end the session.",
+    },
   },
 };

@@ -12,7 +12,7 @@ makedepends=('git' 'nodejs' 'pnpm' 'python' 'base-devel')
 options=('!strip')
 source=("git+https://github.com/YangYuS8/pnet-tool.git")
 sha256sums=('SKIP')
-install=packaging/arch/pnet-tool.install
+install=pnet-tool.install
 
 pkgver() {
   cd "$srcdir/pnet-tool"

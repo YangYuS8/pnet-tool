@@ -68,6 +68,18 @@ export type HomeDictionary = {
       closed: string;
       error: string;
     };
+    sessionTabs: {
+      headerLabel: string;
+      detachAction: string;
+      closeAction: string;
+      emptyTitle: string;
+      emptyDescription: string;
+    };
+    detachedWindow: {
+      title: string;
+      subtitle: string;
+      closeHint: string;
+    };
   };
 };
 

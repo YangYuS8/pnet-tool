@@ -75,5 +75,18 @@ export const home: Dictionaries["home"] = {
       closed: "会话已关闭",
       error: "连接失败",
     },
+    sessionTabs: {
+      headerLabel: "Telnet 会话",
+      detachAction: "分离窗口",
+      closeAction: "关闭",
+      emptyTitle: "还没有 Telnet 会话",
+      emptyDescription:
+        "可以在侧栏发起测试，或从 PNETLab 点击设备，这里会显示所有连接。",
+    },
+    detachedWindow: {
+      title: "Telnet 独立窗口",
+      subtitle: "即使主界面关闭，这个窗口也会保持连接。",
+      closeHint: "关闭此窗口（或按 Ctrl+W）即可结束会话。",
+    },
   },
 };

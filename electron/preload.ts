@@ -15,6 +15,17 @@ type TerminalCreateResult = {
   id: string;
 };
 
+type TerminalAttachOptions = {
+  id: string;
+  dimensions?: TerminalDimensions;
+};
+
+type TerminalDescribeResult = {
+  id: string;
+  host?: string;
+  port?: number;
+};
+
 type TerminalDataPayload = {
   id: string;
   data: string;
@@ -66,6 +77,8 @@ declare global {
         resize: (id: string, dimensions: TerminalDimensions) => void;
         dispose: (id: string) => Promise<boolean>;
         sendSignal: (id: string, signal: string) => void;
+        attach: (options: TerminalAttachOptions) => Promise<boolean>;
+        describe: (id: string) => Promise<TerminalDescribeResult | null>;
         onData: (callback: (payload: TerminalDataPayload) => void) => () => void;
         onExit: (callback: (payload: TerminalExitPayload) => void) => () => void;
         onError: (callback: (payload: TerminalErrorPayload) => void) => () => void;
@@ -76,6 +89,7 @@ declare global {
         close: () => void;
         getState: () => Promise<WindowStatePayload>;
         onStateChange: (callback: (payload: WindowStatePayload) => void) => () => void;
+        openSessionWindow: (payload: { sessionId: string; title?: string }) => Promise<boolean>;
       };
       telnet?: {
         ready: () => Promise<TelnetLaunchRequest[]>;
@@ -104,6 +118,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     sendSignal: (id: string, signal: string) => {
       ipcRenderer.send("terminal:input-signal", { id, signal });
     },
+    attach: (options: TerminalAttachOptions) =>
+      ipcRenderer.invoke("terminal:attach", options) as Promise<boolean>,
+    describe: (id: string) =>
+      ipcRenderer.invoke("terminal:describe", { id }) as Promise<TerminalDescribeResult | null>,
     onData: (callback: (payload: TerminalDataPayload) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: TerminalDataPayload) => {
         callback(payload);
@@ -150,6 +168,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.removeListener("window:state", listener);
       };
     },
+    openSessionWindow: (payload: { sessionId: string; title?: string }) =>
+      ipcRenderer.invoke("window:open-session", payload) as Promise<boolean>,
   },
   telnet: {
     ready: () => ipcRenderer.invoke("telnet:bridge-ready") as Promise<TelnetLaunchRequest[]>,

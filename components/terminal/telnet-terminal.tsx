@@ -10,6 +10,8 @@ import type { HomeDictionary } from "@/lib/i18n/dictionaries";
 
 export type TerminalStatus = "idle" | "connecting" | "connected" | "closed" | "error";
 
+export type TerminalMode = "create" | "attach";
+
 export type TerminalStatusChange = {
   status: TerminalStatus;
   error?: string | null;
@@ -21,6 +23,11 @@ export type TelnetTerminalProps = {
   dictionary: HomeDictionary["terminal"];
   autoConnectSignal?: number;
   onStatusChange?: (payload: TerminalStatusChange) => void;
+  onSessionCreated?: (sessionId: string) => void;
+  sessionId?: string;
+  mode?: TerminalMode;
+  isVisible?: boolean;
+  disposeOnUnmount?: boolean;
 };
 
 type CleanupDisposer = (() => void) | null;
@@ -31,6 +38,11 @@ export function TelnetTerminal({
   dictionary,
   autoConnectSignal,
   onStatusChange,
+  onSessionCreated,
+  sessionId,
+  mode = "create",
+  isVisible = true,
+  disposeOnUnmount = true,
 }: TelnetTerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
@@ -41,6 +53,8 @@ export function TelnetTerminal({
   const errorDisposerRef = useRef<CleanupDisposer>(null);
   const resizeDisposerRef = useRef<CleanupDisposer>(null);
   const autoConnectTokenRef = useRef<number | undefined>(autoConnectSignal);
+  const disposeOnUnmountRef = useRef<boolean>(disposeOnUnmount);
+  const previousVisibilityRef = useRef<boolean>(isVisible);
 
   const [status, setStatus] = useState<TerminalStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +64,16 @@ export function TelnetTerminal({
   useEffect(() => {
     setDesktopAvailable(typeof window !== "undefined" && Boolean(window.desktopBridge?.terminal));
   }, []);
+
+  useEffect(() => {
+    disposeOnUnmountRef.current = disposeOnUnmount;
+  }, [disposeOnUnmount]);
+
+  useEffect(() => {
+    if (mode === "attach" && sessionId) {
+      sessionIdRef.current = sessionId;
+    }
+  }, [mode, sessionId]);
 
   const statusLabel = useMemo(() => {
     switch (status) {
@@ -105,6 +129,34 @@ export function TelnetTerminal({
     setStatus("closed");
   }, [cleanupSession]);
 
+  const subscribeSessionStreams = useCallback(
+    (id: string, terminal: XtermTerminal) => {
+      dataDisposerRef.current = window.desktopBridge?.terminal.onData(({ id: incomingId, data }) => {
+        if (incomingId === id) {
+          terminal.write(data);
+        }
+      }) ?? null;
+
+      exitDisposerRef.current = window.desktopBridge?.terminal.onExit(({ id: exitingId }) => {
+        if (exitingId !== id) {
+          return;
+        }
+        void cleanupSession(false);
+        setStatus("closed");
+      }) ?? null;
+
+      errorDisposerRef.current = window.desktopBridge?.terminal.onError(({ id: erroredId, message }) => {
+        if (erroredId !== id) {
+          return;
+        }
+        setError(message ?? dictionary.status.error);
+        setStatus("error");
+        void cleanupSession(false);
+      }) ?? null;
+    },
+    [cleanupSession, dictionary.status.error]
+  );
+
   const handleConnect = useCallback(async () => {
     if (!containerRef.current) {
       return;
@@ -116,7 +168,7 @@ export function TelnetTerminal({
       return;
     }
 
-    if (!host) {
+    if (mode === "create" && !host) {
       setError(dictionary.requireIp);
       setStatus("error");
       return;
@@ -172,37 +224,29 @@ export function TelnetTerminal({
     window.addEventListener("resize", resizeListener);
     resizeDisposerRef.current = () => window.removeEventListener("resize", resizeListener);
 
+    const dimensions = { cols: terminal.cols, rows: terminal.rows } as const;
+
     try {
-      const { id } = await window.desktopBridge.terminal.createTelnetSession({
-        host,
-        port,
-        dimensions: { cols: terminal.cols, rows: terminal.rows },
-      });
+      let resolvedSessionId = sessionIdRef.current;
 
-      sessionIdRef.current = id;
+      if (mode === "attach" && sessionId) {
+        await window.desktopBridge.terminal.attach({ id: sessionId, dimensions });
+        resolvedSessionId = sessionId;
+      } else {
+        const { id } = await window.desktopBridge.terminal.createTelnetSession({
+          host,
+          port,
+          dimensions,
+        });
+        resolvedSessionId = id;
+      }
 
-      dataDisposerRef.current = window.desktopBridge.terminal.onData(({ id: incomingId, data }) => {
-        if (incomingId === id) {
-          terminal.write(data);
-        }
-      });
+      if (!resolvedSessionId) {
+        throw new Error("Unable to determine terminal session ID");
+      }
 
-      exitDisposerRef.current = window.desktopBridge.terminal.onExit(({ id: exitingId }) => {
-        if (exitingId !== id) {
-          return;
-        }
-        void cleanupSession(false);
-        setStatus("closed");
-      });
-
-      errorDisposerRef.current = window.desktopBridge.terminal.onError(({ id: erroredId, message }) => {
-        if (erroredId !== id) {
-          return;
-        }
-        setError(message ?? dictionary.status.error);
-        setStatus("error");
-        void cleanupSession(false);
-      });
+      sessionIdRef.current = resolvedSessionId;
+      subscribeSessionStreams(resolvedSessionId, terminal);
 
       terminal.onData((data: string) => {
         if (sessionIdRef.current) {
@@ -216,6 +260,7 @@ export function TelnetTerminal({
         }
       });
 
+      onSessionCreated?.(resolvedSessionId);
       setStatus("connected");
       setError(null);
     } catch (connectError) {
@@ -226,7 +271,7 @@ export function TelnetTerminal({
       setStatus("error");
       await cleanupSession(true);
     }
-  }, [cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, port]);
+  }, [cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, mode, onSessionCreated, port, sessionId, subscribeSessionStreams]);
 
   useEffect(() => {
     onStatusChange?.({ status, error });
@@ -245,20 +290,35 @@ export function TelnetTerminal({
       if (status === "connecting") {
         return;
       }
-      if (status === "connected") {
+      if (status === "connected" && mode === "create") {
         await cleanupSession(true);
         setStatus("closed");
       }
       await handleConnect();
     };
     void initiate();
-  }, [autoConnectSignal, cleanupSession, handleConnect, status]);
+  }, [autoConnectSignal, cleanupSession, handleConnect, mode, status]);
 
   useEffect(() => {
     return () => {
-      void cleanupSession(true);
+      void cleanupSession(disposeOnUnmountRef.current);
     };
   }, [cleanupSession]);
+
+  useEffect(() => {
+    if (isVisible && !previousVisibilityRef.current) {
+      window.requestAnimationFrame(() => {
+        fitAddonRef.current?.fit();
+        if (sessionIdRef.current && terminalRef.current) {
+          window.desktopBridge?.terminal.resize(sessionIdRef.current, {
+            cols: terminalRef.current.cols,
+            rows: terminalRef.current.rows,
+          });
+        }
+      });
+    }
+    previousVisibilityRef.current = isVisible;
+  }, [isVisible]);
 
   const actionButtonLabel = useMemo(() => {
     if (status === "connecting") {
