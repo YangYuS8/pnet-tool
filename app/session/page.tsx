@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Circle, Loader2 } from "lucide-react";
 
@@ -25,6 +25,14 @@ const statusTone: Record<TerminalStatus, string> = {
 };
 
 export default function DetachedSessionPage() {
+  return (
+    <Suspense fallback={<DetachedSessionFallback />}>
+      <DetachedSessionContent />
+    </Suspense>
+  );
+}
+
+function DetachedSessionContent() {
   const searchParams = useSearchParams();
   const sessionIdParam = searchParams.get("sessionId");
   const hostParam = searchParams.get("host") ?? "";
@@ -148,6 +156,19 @@ export default function DetachedSessionPage() {
             </p>
           )}
         </main>
+      </div>
+    </DesktopWindowChrome>
+  );
+}
+
+function DetachedSessionFallback() {
+  return (
+    <DesktopWindowChrome>
+      <div className="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/40 px-6 py-6 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-3">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>{terminalDictionary.detachedWindow.title}</span>
+        </div>
       </div>
     </DesktopWindowChrome>
   );
