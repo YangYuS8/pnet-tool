@@ -89,8 +89,8 @@ export function DesktopWindowChrome({ children }: DesktopWindowChromeProps) {
   }
 
   return (
-    <div className="flex h-full min-h-screen w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_8%_16%,rgba(18,21,26,0.94),rgba(9,11,14,0.98))] text-foreground">
-      <div className="flex h-full w-full flex-col overflow-hidden bg-background/94 backdrop-blur-xl">
+    <div className="flex h-screen w-full flex-col bg-background text-foreground">
+      <div className="flex flex-1 flex-col overflow-hidden bg-background">
         <header
           className={cn(
             "flex h-12 items-center justify-between border-b border-border/40 px-4 text-xs transition",
@@ -124,7 +124,7 @@ export function DesktopWindowChrome({ children }: DesktopWindowChromeProps) {
             </WindowControlButton>
           </div>
         </header>
-        <div className="flex flex-1 flex-col overflow-hidden bg-background/95">
+        <div className="flex flex-1 flex-col overflow-hidden bg-background">
           {children}
         </div>
       </div>

@@ -118,16 +118,62 @@ type WindowStatePayload = {
   isFocused: boolean;
 };
 
-function emitWindowState() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+function getWindowState(target?: BrowserWindow | null): WindowStatePayload {
+  if (!target || target.isDestroyed()) {
+    return { isMaximized: false, isFullScreen: false, isFocused: false } satisfies WindowStatePayload;
+  }
+  return {
+    isMaximized: target.isMaximized(),
+    isFullScreen: target.isFullScreen(),
+    isFocused: target.isFocused(),
+  } satisfies WindowStatePayload;
+}
+
+function sendWindowState(target: BrowserWindow) {
+  if (target.isDestroyed() || target.webContents.isDestroyed()) {
     return;
   }
-  const payload: WindowStatePayload = {
-    isMaximized: mainWindow.isMaximized(),
-    isFullScreen: mainWindow.isFullScreen(),
-    isFocused: mainWindow.isFocused(),
-  };
-  mainWindow.webContents.send("window:state", payload);
+  target.webContents.send("window:state", getWindowState(target));
+}
+
+type WindowStateEvent =
+  | "focus"
+  | "blur"
+  | "maximize"
+  | "unmaximize"
+  | "minimize"
+  | "restore"
+  | "enter-full-screen"
+  | "leave-full-screen";
+
+const windowStateEvents: WindowStateEvent[] = [
+  "focus",
+  "blur",
+  "maximize",
+  "unmaximize",
+  "minimize",
+  "restore",
+  "enter-full-screen",
+  "leave-full-screen",
+];
+
+function registerWindowStateEvents(target: BrowserWindow) {
+  const emit = () => sendWindowState(target);
+
+  windowStateEvents.forEach((eventName) => {
+    const typedEvent = eventName as Parameters<BrowserWindow["on"]>[0];
+    target.on(typedEvent, emit);
+  });
+
+  target.on("closed", () => {
+    windowStateEvents.forEach((eventName) => {
+      const typedEvent = eventName as Parameters<BrowserWindow["removeListener"]>[0];
+      target.removeListener(typedEvent, emit);
+    });
+  });
+
+  target.webContents.on("did-finish-load", emit);
+  target.once("ready-to-show", emit);
 }
 
 type TerminalDimensions = {
@@ -317,6 +363,7 @@ function createDetachedSessionWindow(sessionId: string, title?: string) {
   });
 
   sessionWindows.add(detachedWindow);
+  registerWindowStateEvents(detachedWindow);
 
   detachedWindow.once("ready-to-show", () => {
     if (!detachedWindow.isDestroyed()) {
@@ -371,10 +418,13 @@ function createMainWindow() {
   telnetBridgeReady = false;
 
   mainWindow.setMenuBarVisibility(false);
+  registerWindowStateEvents(mainWindow);
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
-    emitWindowState();
+    if (mainWindow) {
+      sendWindowState(mainWindow);
+    }
   });
 
   let loadPromise: Promise<void> | undefined;
@@ -397,15 +447,6 @@ function createMainWindow() {
     mainWindow = null;
     telnetBridgeReady = false;
   });
-
-  mainWindow.on("focus", emitWindowState);
-  mainWindow.on("blur", emitWindowState);
-  mainWindow.on("maximize", emitWindowState);
-  mainWindow.on("unmaximize", emitWindowState);
-  mainWindow.on("minimize", emitWindowState);
-  mainWindow.on("restore", emitWindowState);
-  mainWindow.on("enter-full-screen", emitWindowState);
-  mainWindow.on("leave-full-screen", emitWindowState);
 
   mainWindow.webContents.on("did-finish-load", () => {
     dispatchTelnetRequests();
@@ -691,33 +732,24 @@ ipcMain.on("terminal:input-signal", (_event, payload: { id: string; signal: stri
 ipcMain.handle("app:get-version", () => app.getVersion());
 ipcMain.handle("app:ping", () => "pong");
 
-ipcMain.handle("window:get-state", () => {
-  if (!mainWindow) {
-    return { isMaximized: false, isFullScreen: false, isFocused: false } satisfies WindowStatePayload;
-  }
-  return {
-    isMaximized: mainWindow.isMaximized(),
-    isFullScreen: mainWindow.isFullScreen(),
-    isFocused: mainWindow.isFocused(),
-  } satisfies WindowStatePayload;
+ipcMain.handle("window:get-state", (event) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  return getWindowState(target);
 });
 
-ipcMain.handle("window:toggle-maximize", () => {
-  if (!mainWindow) {
-    return { isMaximized: false, isFullScreen: false, isFocused: false } satisfies WindowStatePayload;
+ipcMain.handle("window:toggle-maximize", (event) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  if (!target) {
+    return getWindowState(null);
   }
-  if (mainWindow.isFullScreen()) {
-    mainWindow.setFullScreen(false);
-  } else if (mainWindow.isMaximized()) {
-    mainWindow.unmaximize();
+  if (target.isFullScreen()) {
+    target.setFullScreen(false);
+  } else if (target.isMaximized()) {
+    target.unmaximize();
   } else {
-    mainWindow.maximize();
+    target.maximize();
   }
-  return {
-    isMaximized: mainWindow.isMaximized(),
-    isFullScreen: mainWindow.isFullScreen(),
-    isFocused: mainWindow.isFocused(),
-  } satisfies WindowStatePayload;
+  return getWindowState(target);
 });
 
 ipcMain.handle("window:open-session", (_event, payload: { sessionId?: string; title?: string } = {}) => {
@@ -737,16 +769,17 @@ ipcMain.handle("window:open-session", (_event, payload: { sessionId?: string; ti
   }
 });
 
-ipcMain.on("window:minimize", () => {
-  if (!mainWindow) {
-    return;
+ipcMain.on("window:minimize", (event) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  target?.minimize();
+  if (target) {
+    sendWindowState(target);
   }
-  mainWindow.minimize();
-  emitWindowState();
 });
 
-ipcMain.on("window:close", () => {
-  mainWindow?.close();
+ipcMain.on("window:close", (event) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  target?.close();
 });
 
 ipcMain.handle("telnet:bridge-ready", () => {

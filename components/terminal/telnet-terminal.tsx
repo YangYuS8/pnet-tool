@@ -28,6 +28,7 @@ export type TelnetTerminalProps = {
   mode?: TerminalMode;
   isVisible?: boolean;
   disposeOnUnmount?: boolean;
+  showControls?: boolean;
 };
 
 type CleanupDisposer = (() => void) | null;
@@ -43,6 +44,7 @@ export function TelnetTerminal({
   mode = "create",
   isVisible = true,
   disposeOnUnmount = true,
+  showControls = true,
 }: TelnetTerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
@@ -52,7 +54,7 @@ export function TelnetTerminal({
   const exitDisposerRef = useRef<CleanupDisposer>(null);
   const errorDisposerRef = useRef<CleanupDisposer>(null);
   const resizeDisposerRef = useRef<CleanupDisposer>(null);
-  const autoConnectTokenRef = useRef<number | undefined>(autoConnectSignal);
+  const autoConnectTokenRef = useRef<number | undefined>(undefined);
   const disposeOnUnmountRef = useRef<boolean>(disposeOnUnmount);
   const previousVisibilityRef = useRef<boolean>(isVisible);
 
@@ -274,6 +276,12 @@ export function TelnetTerminal({
   }, [cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, mode, onSessionCreated, port, sessionId, subscribeSessionStreams]);
 
   useEffect(() => {
+    if (mode === "attach" && sessionId && status === "idle") {
+      void handleConnect();
+    }
+  }, [handleConnect, mode, sessionId, status]);
+
+  useEffect(() => {
     onStatusChange?.({ status, error });
   }, [status, error, onStatusChange]);
 
@@ -352,10 +360,20 @@ export function TelnetTerminal({
     <div className="flex w-full flex-col gap-4">
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={handleActionClick} disabled={isActionDisabled} variant={status === "connected" ? "secondary" : "default"}>
-            {actionButtonLabel}
-          </Button>
-          <span className="text-xs text-muted-foreground">{statusLabel}</span>
+          {showControls ? (
+            <>
+              <Button
+                onClick={handleActionClick}
+                disabled={isActionDisabled}
+                variant={status === "connected" ? "secondary" : "default"}
+              >
+                {actionButtonLabel}
+              </Button>
+              <span className="text-xs text-muted-foreground">{statusLabel}</span>
+            </>
+          ) : (
+            <span className="text-xs font-medium text-muted-foreground">{statusLabel}</span>
+          )}
         </div>
         {!isDesktopAvailable && (
           <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
@@ -373,7 +391,7 @@ export function TelnetTerminal({
           </p>
         )}
       </div>
-      <Separator className="bg-border/60" />
+  {showControls && <Separator className="bg-border/60" />}
       <div
         ref={containerRef}
         className="h-[360px] w-full overflow-hidden rounded-lg border border-border bg-card/90 shadow-inner"

@@ -38,8 +38,9 @@ function DetachedSessionContent() {
   const hostParam = searchParams.get("host") ?? "";
   const portParam = searchParams.get("port");
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [autoConnectSignal, setAutoConnectSignal] = useState(0);
+  const sessionId = useMemo(() => {
+    return sessionIdParam && sessionIdParam.trim().length > 0 ? sessionIdParam : null;
+  }, [sessionIdParam]);
   const [status, setStatus] = useState<TerminalStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [resolvedHost, setResolvedHost] = useState<string>(hostParam);
@@ -47,14 +48,6 @@ function DetachedSessionContent() {
     const parsed = portParam ? Number.parseInt(portParam, 10) : NaN;
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   });
-
-  useEffect(() => {
-    if (!sessionIdParam) {
-      return;
-    }
-    setSessionId(sessionIdParam);
-    setAutoConnectSignal((token) => token + 1);
-  }, [sessionIdParam]);
 
   useEffect(() => {
     if (!sessionId || !window.desktopBridge?.terminal?.describe) {
@@ -109,35 +102,35 @@ function DetachedSessionContent() {
     }
 
     return (
-      <div className="flex h-full flex-1 flex-col rounded-lg border border-border/70 bg-card/95 shadow-inner">
+      <div className="flex h-full flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
         <TelnetTerminal
           host={resolvedHost}
           port={resolvedPort ?? DEFAULT_TELNET_PORT}
           dictionary={terminalDictionary}
-          autoConnectSignal={autoConnectSignal}
           onStatusChange={handleStatusChange}
           sessionId={sessionId}
           mode="attach"
           isVisible
+          showControls={false}
         />
       </div>
     );
-  }, [autoConnectSignal, handleStatusChange, resolvedHost, resolvedPort, sessionId]);
+  }, [handleStatusChange, resolvedHost, resolvedPort, sessionId]);
 
   return (
     <DesktopWindowChrome>
-      <div className="flex h-full w-full flex-col bg-gradient-to-br from-background via-background to-muted/40">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-background/80 px-6 py-4">
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-foreground/90">
+      <div className="flex h-full w-full flex-col bg-background">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">
               {terminalDictionary.detachedWindow.title}
             </p>
-            <p className="text-xs text-muted-foreground/80">
+            <p className="text-xs text-muted-foreground">
               {terminalDictionary.detachedWindow.subtitle}
             </p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground/80">
-            <span className="truncate text-sm font-medium text-foreground/90">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="truncate text-sm font-medium text-foreground">
               {hostDisplay}
             </span>
             <span className={cn("flex items-center gap-1", statusTone[status])}>
@@ -146,12 +139,12 @@ function DetachedSessionContent() {
             </span>
           </div>
         </header>
-        <main className="flex flex-1 flex-col gap-3 px-6 py-6">
+        <main className="flex flex-1 flex-col gap-3 px-5 py-4">
           {terminalCard}
           {error ? (
             <p className="text-xs text-destructive/80">{error}</p>
           ) : (
-            <p className="text-[11px] text-muted-foreground/70">
+            <p className="text-[11px] text-muted-foreground">
               {terminalDictionary.detachedWindow.closeHint}
             </p>
           )}
@@ -164,8 +157,8 @@ function DetachedSessionContent() {
 function DetachedSessionFallback() {
   return (
     <DesktopWindowChrome>
-      <div className="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/40 px-6 py-6 text-sm text-muted-foreground">
-        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-3">
+      <div className="flex h-full w-full flex-col items-center justify-center bg-background px-6 py-6 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/60 bg-muted/20 px-4 py-3">
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>{terminalDictionary.detachedWindow.title}</span>
         </div>

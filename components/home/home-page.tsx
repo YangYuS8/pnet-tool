@@ -9,8 +9,6 @@ import {
   ShieldQuestion,
   TerminalSquare,
   WifiOff,
-  PlugZap,
-  Sparkles,
 } from "lucide-react";
 
 import { LocaleSwitcher } from "@/components/locale-switcher";
@@ -142,9 +140,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [sessions, setSessions] = useState<ManagedSession[]>([]);
   const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
-  const [autoConnectOnHealthPass, setAutoConnectOnHealthPass] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  const lastAutoTriggerRef = useRef<ConnectionState | null>(null);
   const sessionsRef = useRef<ManagedSession[]>([]);
   const activeKeyRef = useRef<string | null>(null);
   const sessionCounterRef = useRef(0);
@@ -222,12 +218,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
   }, []);
 
   useEffect(() => {
-    if (!isDesktop) {
-      setAutoConnectOnHealthPass(false);
-    }
-  }, [isDesktop]);
-
-  useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
 
@@ -284,17 +274,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
 
   const terminalErrorMessage = activeSession?.error ?? (status.state === "offline" ? statusMessage : null);
 
-  useEffect(() => {
-    if (!autoConnectOnHealthPass) {
-      lastAutoTriggerRef.current = status.state;
-      return;
-    }
-    if (status.state === "online" && lastAutoTriggerRef.current !== "online" && ip) {
-      createSessionEntry(ip, DEFAULT_TELNET_PORT);
-    }
-    lastAutoTriggerRef.current = status.state;
-  }, [autoConnectOnHealthPass, createSessionEntry, ip, status.state]);
-
   const handleSessionStatusChange = useCallback(
     (key: string) => (payload: TerminalStatusChange) => {
       setSessions((prev) =>
@@ -327,18 +306,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     },
     []
   );
-
-  const handleTestTelnet = useCallback(() => {
-    if (!ip) {
-      setStatus({ state: "offline", message: dictionary.errors.missingIp });
-      return;
-    }
-    createSessionEntry(ip, DEFAULT_TELNET_PORT);
-  }, [createSessionEntry, dictionary.errors.missingIp, ip]);
-
-  const isTestDisabled = useMemo(() => {
-    return !isDesktop || !ip.trim();
-  }, [isDesktop, ip]);
 
   const handleTelnetLaunch = useCallback(
     (request: TelnetLaunchRequest) => {
@@ -607,10 +574,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" disabled>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {dictionary.navigation.initButton}
-            </Button>
             <Suspense
               fallback={
                 <div
@@ -632,43 +595,8 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
                 <CardTitle>{dictionary.main.cardTitle}</CardTitle>
                 <CardDescription>{dictionary.main.cardDescription}</CardDescription>
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleTestTelnet}
-                  disabled={isTestDisabled}
-                  className="shadow-sm"
-                >
-                  <PlugZap className="h-4 w-4" />
-                  {dictionary.terminal.testButton}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={autoConnectOnHealthPass ? "secondary" : "outline"}
-                  aria-pressed={autoConnectOnHealthPass}
-                  onClick={() => setAutoConnectOnHealthPass((prev) => !prev)}
-                  className="shadow-sm"
-                  disabled={!isDesktop}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {autoConnectOnHealthPass
-                    ? dictionary.terminal.autoLaunchOn
-                    : dictionary.terminal.autoLaunchOff}
-                </Button>
-                <p className="max-w-[220px] text-right text-[11px] leading-snug text-muted-foreground">
-                  {dictionary.terminal.autoLaunchDescription}
-                </p>
-              </div>
             </CardHeader>
             <CardContent className="flex flex-1 flex-col gap-4 p-6">
-              <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">
-                  {dictionary.main.placeholderTitle}
-                </p>
-                <p>{dictionary.main.placeholderDescription}</p>
-              </div>
               <div className="flex flex-1 flex-col gap-3">
                 <SessionTabs
                   sessions={sessions.map((session) => ({
