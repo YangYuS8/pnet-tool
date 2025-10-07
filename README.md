@@ -1,13 +1,16 @@
 ## 项目概览
 
-PNET Tool 是一个结合 Next.js 15 与 Electron 38 的桌面端应用雏形，用于对接 PNETLab 模拟器的路由设备命令窗口。界面使用 Tailwind CSS 4 与 shadcn/ui 组件体系，默认亮色主题并支持暗色切换。
+PNET Tool 是一个结合 Next.js 15 与 Electron 38 的桌面端应用，用于对接 PNETLab 模拟器的路由设备命令窗口。界面使用 Tailwind CSS 4 与 shadcn/ui 组件体系，默认亮色主题并支持暗色切换。
 
 当前实现的核心能力：
 
-- UI 布局：左侧为 PNETLab 配置面板，右侧为未来的终端工作区，占位设计参考 SecureFX。
-- 配置检测：可输入 PNETLab 的 IP/端口，通过服务器端 API (`/api/pnetlab/health`) 快速探测连通性并反馈响应时延。
-- 双语界面：支持 `zh-CN` 与 `en` 两种语言，通过 `/[locale]` 路径访问并在客户端使用语言开关即时切换。
-- 桌面框架：引入 Electron 主进程与预加载脚本，为后续 Telnet 会话与 IPC 奠定基础。
+- Telnet 终端：基于 `node-pty` + `@xterm/xterm` 的高性能管道，支持自动连接 PNETLab 设备并回传状态。
+- 多会话标签：可同时打开多个会话，提供浏览器式标签栏，支持快速切换、关闭与重命名。
+- 窗口分离：任意会话可在独立 Electron 窗口中持续运行，保持守护状态与自动重连逻辑。
+- 协议唤起：注册 `telnet://` 协议，支持从浏览器点击 PNETLab 拓扑节点后唤起桌面端并自动连接。
+- 配置检测：通过 `/api/pnetlab/health` 探测 PNETLab 连通性并反馈响应时延。
+- 双语界面：支持 `zh-CN` 与 `en` 两种语言，通过 `/[locale]` 路径访问并在客户端即时切换。
+- 桌面壳层：定制化窗口标题栏、主题切换与 IPC 桥接，统一桌面视觉风格。
 
 ## 快速开始
 
@@ -49,8 +52,9 @@ pnpm run dist:appimage  # 产出 Linux AppImage 安装包
 
 ## 下一步路线
 
-- 集成 node-pty + xterm.js，构建高性能 Telnet 终端体验。
-- 监听 PNETLab 网页事件，实现点击设备后自动打开对应会话。
-- 引入多会话管理、窗口布局（Tabs/Pane）与连接守护进程。
+- 完成 Arch/Manjaro 的 `PKGBUILD`、post-install 与协议注册脚本，打磨 Linux 发行体验。
+- 编写 AppImage / PKGBUILD 双路径的安装与故障排查指南，补齐图文文档。
+- 强化 Telnet 终端的断线检测、日志导出与多会话持久化能力。
+- 评估并引入轻量 CI，自动构建试玩包并回归 `telnet://` 唤起流程。
 
-欢迎根据实际需求继续拓展功能。系统化的敏捷迭代建议：先打通 Telnet 管道，再完善自动唤醒与 UI/UX 细节。
+欢迎根据实际需求继续拓展功能。通过持续迭代，我们将把 PNET Tool 打造成面向网络实验室的高效 Telnet 桌面客户端。
