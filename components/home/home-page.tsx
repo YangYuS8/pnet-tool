@@ -15,7 +15,6 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   TelnetTerminal,
-  type TerminalMode,
   type TerminalStatus,
   type TerminalStatusChange,
 } from "@/components/terminal/telnet-terminal";
@@ -135,9 +134,6 @@ type ManagedSession = {
   autoConnectToken: number;
   status: TerminalStatus;
   error: string | null;
-  disposeOnUnmount: boolean;
-  mode: TerminalMode;
-  isDetaching?: boolean;
 };
 
 export type HomePageProps = {
@@ -195,8 +191,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
         autoConnectToken: autoToken,
         status: "idle",
         error: null,
-        disposeOnUnmount: true,
-        mode: "create",
       };
 
       setSessions((prev) => [...prev, newSession]);
@@ -447,80 +441,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     []
   );
 
-  const handleDetachSession = useCallback(
-    async (key: string) => {
-      const target = sessionsRef.current.find((session) => session.key === key);
-      if (!target || !target.sessionId) {
-        return;
-      }
-
-      const openSessionWindow = window.desktopBridge?.window?.openSessionWindow;
-      if (!openSessionWindow) {
-        setSessions((prev) =>
-
-          prev.map((session) =>
-            session.key === key
-              ? {
-                  ...session,
-                  error: dictionary.terminal.desktopOnlyHint,
-                }
-              : session
-          )
-        );
-        return;
-      }
-
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.key === key
-            ? {
-                ...session,
-                isDetaching: true,
-                disposeOnUnmount: false,
-              }
-            : session
-        )
-      );
-
-      const titleLabel = target.label
-        ? target.label
-        : target.host
-          ? `${target.host}${target.port ? `:${target.port}` : ""}`
-          : target.sessionId;
-
-      try {
-        const success = await openSessionWindow({ sessionId: target.sessionId, title: titleLabel });
-        if (!success) {
-          throw new Error("Detached window request was rejected");
-        }
-
-        setSessions((prev) => {
-          const next = prev.filter((session) => session.key !== key);
-          if (activeKeyRef.current === key) {
-            const fallback = next[next.length - 1] ?? null;
-            setActiveSessionKey(fallback?.key ?? null);
-          }
-          return next;
-        });
-      } catch (error) {
-        console.error("Failed to detach session", error);
-        setSessions((prev) =>
-          prev.map((session) =>
-            session.key === key
-              ? {
-                  ...session,
-                  isDetaching: false,
-                  disposeOnUnmount: true,
-                  error: dictionary.terminal.desktopOnlyHint,
-                }
-              : session
-          )
-        );
-      }
-    },
-    [dictionary.terminal.desktopOnlyHint]
-  );
-
   const handleTabReorder = useCallback((sourceKey: string, targetKey: string | null) => {
     setSessions((prev) => {
       if (sourceKey === targetKey) {
@@ -556,61 +476,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
       return next;
     });
   }, []);
-
-  const handleMergeDetachedSession = useCallback(
-    async (payload: { sessionId: string; host?: string; port?: number; label?: string }) => {
-      const reattachSession = window.desktopBridge?.window?.reattachSession;
-      const trimmedId = payload.sessionId?.trim();
-      if (!reattachSession || !trimmedId) {
-        return;
-      }
-
-      const existing = sessionsRef.current.find((session) => session.sessionId === trimmedId);
-      if (existing) {
-        setActiveSessionKey(existing.key);
-        return;
-      }
-
-      try {
-        const details = await reattachSession({ sessionId: trimmedId });
-        if (!details) {
-          return;
-        }
-
-        const key = generateSessionKey();
-        const autoToken = generateAutoToken();
-        const resolvedHost = details.host ?? payload.host ?? "";
-        const resolvedPort =
-          typeof details.port === "number" && Number.isFinite(details.port) && details.port > 0
-            ? details.port
-            : typeof payload.port === "number" && Number.isFinite(payload.port) && payload.port > 0
-              ? payload.port
-              : DEFAULT_TELNET_PORT;
-        const resolvedLabelSource = details.label ?? payload.label ?? resolvedHost ?? trimmedId;
-        const resolvedLabel = resolvedLabelSource.trim().length > 0 ? resolvedLabelSource.trim() : resolvedHost;
-
-        setSessions((prev) => [
-          ...prev,
-          {
-            key,
-            sessionId: trimmedId,
-            host: resolvedHost,
-            port: resolvedPort,
-            label: resolvedLabel || trimmedId,
-            autoConnectToken: autoToken,
-            status: "idle",
-            error: null,
-            disposeOnUnmount: true,
-            mode: "attach",
-          },
-        ]);
-        setActiveSessionKey(key);
-      } catch (error) {
-        console.error("Failed to merge detached session", error);
-      }
-    },
-    [generateAutoToken, generateSessionKey]
-  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -775,57 +640,66 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
 
         <section className="flex flex-1 flex-col gap-4 px-6 py-6">
           <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-border/70 bg-background/80 p-5 shadow-sm">
-            <div className="flex min-h-0 flex-1 flex-col gap-3">
-              <SessionTabs
-                sessions={sessions.map((session) => ({
-                  key: session.key,
-                  host: session.host,
-                  port: session.port,
-                  label: session.label,
-                  status: session.status,
-                  isActive: session.key === activeSessionKey,
-                  isDetaching: session.isDetaching,
-                }))}
-                dictionary={dictionary.terminal}
-                onSelect={handleSelectSession}
-                onClose={handleCloseSession}
-                onDetach={handleDetachSession}
-                onReorder={handleTabReorder}
-                onMergeDetachedSession={handleMergeDetachedSession}
-              />
-
-              {sessions.length > 0 && (
-                <div className="relative flex min-h-[420px] flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner">
-                  {sessions.map((session) => {
-                    const isActive = session.key === activeSessionKey;
-                    return (
-                      <div
-                        key={session.key}
-                        className={cn(
-                          "absolute inset-0 flex flex-col transition-opacity duration-200",
-                          isActive ? "z-10 opacity-100" : "pointer-events-none opacity-0"
-                        )}
-                        aria-hidden={!isActive}
-                      >
-                        <TelnetTerminal
-                          host={session.host}
-                          port={session.port}
-                          label={session.label}
-                          dictionary={dictionary.terminal}
-                          autoConnectSignal={session.autoConnectToken}
-                          onStatusChange={handleSessionStatusChange(session.key)}
-                          onSessionCreated={handleSessionCreated(session.key)}
-                          sessionId={session.sessionId}
-                          isVisible={isActive}
-                          disposeOnUnmount={session.disposeOnUnmount}
-                          mode={session.mode}
-                          className="flex-1"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+              <div className="flex min-h-0 w-full flex-col gap-3 lg:max-w-[320px]">
+                <SessionTabs
+                  sessions={sessions.map((session) => ({
+                    key: session.key,
+                    host: session.host,
+                    port: session.port,
+                    label: session.label,
+                    status: session.status,
+                    isActive: session.key === activeSessionKey,
+                  }))}
+                  dictionary={dictionary.terminal}
+                  onSelect={handleSelectSession}
+                  onClose={handleCloseSession}
+                  onReorder={handleTabReorder}
+                />
+              </div>
+              <div className="flex min-h-0 flex-1">
+                {sessions.length > 0 ? (
+                  <div className="relative flex min-h-[420px] flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner">
+                    {sessions.map((session) => {
+                      const isActive = session.key === activeSessionKey;
+                      return (
+                        <div
+                          key={session.key}
+                          className={cn(
+                            "absolute inset-0 flex flex-col transition-opacity duration-200",
+                            isActive ? "z-10 opacity-100" : "pointer-events-none opacity-0"
+                          )}
+                          aria-hidden={!isActive}
+                        >
+                          <TelnetTerminal
+                            host={session.host}
+                            port={session.port}
+                            label={session.label}
+                            dictionary={dictionary.terminal}
+                            autoConnectSignal={session.autoConnectToken}
+                            onStatusChange={handleSessionStatusChange(session.key)}
+                            onSessionCreated={handleSessionCreated(session.key)}
+                            sessionId={session.sessionId}
+                            isVisible={isActive}
+                            className="flex-1"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
+                    <div className="max-w-[320px] space-y-2">
+                      <p className="text-base font-semibold text-foreground/80">
+                        {dictionary.terminal.sessionTabs.emptyTitle}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {dictionary.terminal.sessionTabs.emptyDescription}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             {terminalErrorMessage && (
               <p className="text-xs text-destructive/80">{terminalErrorMessage}</p>

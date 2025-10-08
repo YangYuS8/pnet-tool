@@ -116,8 +116,6 @@ declare global {
         close: () => void;
         getState: () => Promise<WindowStatePayload>;
         onStateChange: (callback: (payload: WindowStatePayload) => void) => () => void;
-        openSessionWindow: (payload: { sessionId: string; title?: string }) => Promise<boolean>;
-        reattachSession: (payload: { sessionId: string }) => Promise<TerminalDescribeResult | null>;
       };
       telnet?: {
         ready: () => Promise<TelnetAction[]>;
@@ -207,10 +205,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.removeListener("window:state", listener);
       };
     },
-    openSessionWindow: (payload: { sessionId: string; title?: string }) =>
-      ipcRenderer.invoke("window:open-session", payload) as Promise<boolean>,
-    reattachSession: (payload: { sessionId: string }) =>
-      ipcRenderer.invoke("window:reattach-session", payload) as Promise<TerminalDescribeResult | null>,
   },
   telnet: {
     ready: () => ipcRenderer.invoke("telnet:bridge-ready") as Promise<TelnetAction[]>,

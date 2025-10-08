@@ -9,6 +9,24 @@ const PNETLAB_HOST_PATTERN = /^[a-zA-Z0-9.-]+$/;
 const DEFAULT_PNETLAB_PORT = 80;
 const DEFAULT_PNETLAB_TIMEOUT = 4000;
 
+const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
+const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
+const PRELOAD_PATH = path.join(__dirname, "preload.js");
+
+if (!isDev) {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: "app",
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+      },
+    },
+  ]);
+}
+
 type PnetlabHealthProbeResult =
   | {
       ok: true;
@@ -35,11 +53,7 @@ function normalizeLabel(label?: string | null) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-async function probePnetlabHealth(
-  ip: string,
-  port: number,
-  timeoutMs: number = DEFAULT_PNETLAB_TIMEOUT
-): Promise<PnetlabHealthProbeResult> {
+async function probePnetlabHealth(ip: string, port: number, timeoutMs = DEFAULT_PNETLAB_TIMEOUT) {
   const targetUrl = `http://${ip}:${port}/`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -53,14 +67,13 @@ async function probePnetlabHealth(
 
     const latencyMs = Date.now() - startedAt;
     const reachable = response.ok || response.status < 500;
-
     if (!reachable) {
       return {
         ok: false,
         message: response.statusText || "PNETLab 无法连接",
         status: response.status,
         statusText: response.statusText,
-      };
+      } satisfies PnetlabHealthProbeResult;
     }
 
     return {
@@ -68,33 +81,15 @@ async function probePnetlabHealth(
       status: response.status,
       statusText: response.statusText,
       latencyMs,
-    };
+    } satisfies PnetlabHealthProbeResult;
   } catch (error) {
     return {
       ok: false,
       message: error instanceof Error ? error.message : "PNETLab 无法连接",
-    };
+    } satisfies PnetlabHealthProbeResult;
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
-const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
-const PRELOAD_PATH = path.join(__dirname, "preload.js");
-
-if (!isDev) {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: "app",
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        corsEnabled: true,
-      },
-    },
-  ]);
 }
 
 function resolveTelnetProtocolTarget() {
@@ -238,9 +233,6 @@ type PnetlabHealthCheckPayload = {
 
 const pendingTelnetActions: TelnetAction[] = [];
 let telnetBridgeReady = false;
-const sessionWindows = new Set<BrowserWindow>();
-const sessionWindowMap = new Map<string, BrowserWindow>();
-const reattachPendingWindows = new Map<string, BrowserWindow>();
 const sessionKeyIndex = new Map<string, string>();
 
 const MAX_TERMINAL_BUFFER_CHARS = 120_000;
@@ -321,14 +313,15 @@ function appendSessionBuffer(session: TerminalSession, chunk: string) {
 
 function deliverToRenderers(channel: string, payload: Record<string, unknown>) {
   const recipients = new Set<Electron.WebContents>();
-  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-    recipients.add(mainWindow.webContents);
-  }
-  sessionWindows.forEach((window) => {
+  BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
       recipients.add(window.webContents);
     }
   });
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    recipients.add(mainWindow.webContents);
+  }
+
   recipients.forEach((target) => {
     try {
       target.send(channel, payload);
@@ -378,19 +371,6 @@ function updateSessionLabel(id: string, session: TerminalSession, candidate?: st
     host: session.host,
     port: session.port,
   });
-
-  const attachedWindow = sessionWindowMap.get(id);
-  if (attachedWindow && !attachedWindow.isDestroyed()) {
-    const titleLabel = nextLabel;
-    const fallbackTitle = session.host
-      ? `Telnet ${session.host}${session.port ? `:${session.port}` : ""}`
-      : "Telnet Session";
-    try {
-      attachedWindow.setTitle(titleLabel || fallbackTitle);
-    } catch (error) {
-      console.warn("Failed to update window title for session", id, error);
-    }
-  }
 }
 
 function enqueueTelnetAction(action: TelnetAction) {
@@ -442,13 +422,7 @@ function handleIncomingTelnetRequest(request: TelnetLaunchRequest) {
         };
         enqueueTelnetActivate(activatePayload);
 
-        const targetWindow = sessionWindowMap.get(existingId);
-        if (targetWindow && !targetWindow.isDestroyed()) {
-          if (targetWindow.isMinimized()) {
-            targetWindow.restore();
-          }
-          targetWindow.focus();
-        } else if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
           if (mainWindow.isMinimized()) {
             mainWindow.restore();
           }
@@ -566,17 +540,6 @@ function disposeTerminalSession(id: string) {
       sessionKeyIndex.delete(session.matchKey);
     }
   }
-
-  const attachedWindow = sessionWindowMap.get(id);
-  if (attachedWindow && !attachedWindow.isDestroyed()) {
-    try {
-      attachedWindow.close();
-    } catch (error) {
-      console.warn("Failed to close session window during dispose", id, error);
-    }
-  }
-  sessionWindowMap.delete(id);
-  reattachPendingWindows.delete(id);
   terminalSessions.delete(id);
   return true;
 }
@@ -604,93 +567,7 @@ function attachSessionToSender(id: string, sender: Electron.WebContents) {
   session.sender = sender;
   session.destroyListener = destroyListener;
 
-  const owningWindow = BrowserWindow.fromWebContents(sender) ?? null;
-  if (!owningWindow || owningWindow === mainWindow) {
-    sessionWindowMap.delete(id);
-    reattachPendingWindows.delete(id);
-  } else if (!owningWindow.isDestroyed()) {
-    if (sessionWindowMap.get(id) !== owningWindow) {
-      owningWindow.once("closed", () => {
-        if (sessionWindowMap.get(id) === owningWindow) {
-          sessionWindowMap.delete(id);
-        }
-        reattachPendingWindows.delete(id);
-      });
-    }
-    sessionWindowMap.set(id, owningWindow);
-  }
-
   return true;
-}
-
-function createDetachedSessionWindow(sessionId: string, title?: string) {
-  const session = terminalSessions.get(sessionId);
-  if (!session) {
-    throw new Error(`Unable to detach unknown session ${sessionId}`);
-  }
-
-  const windowTitle =
-    title ??
-    session.label ??
-    (session.host ? `Telnet ${session.host}${session.port ? `:${session.port}` : ""}` : "Telnet Session");
-
-  const detachedWindow = new BrowserWindow({
-    width: 1080,
-    height: 720,
-    minWidth: 820,
-    minHeight: 520,
-    title: windowTitle,
-    show: false,
-    frame: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f5f5",
-    icon: getAppIcon(),
-    webPreferences: {
-      preload: PRELOAD_PATH,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false,
-    },
-  });
-
-  sessionWindows.add(detachedWindow);
-  registerWindowStateEvents(detachedWindow);
-
-  detachedWindow.once("ready-to-show", () => {
-    if (!detachedWindow.isDestroyed()) {
-      detachedWindow.show();
-    }
-  });
-
-  detachedWindow.on("closed", () => {
-    sessionWindows.delete(detachedWindow);
-    if (sessionWindowMap.get(sessionId) === detachedWindow) {
-      sessionWindowMap.delete(sessionId);
-    }
-    reattachPendingWindows.delete(sessionId);
-  });
-
-  const queryParams = new URLSearchParams({ sessionId });
-  if (session.host) {
-    queryParams.set("host", session.host);
-  }
-  if (session.port) {
-    queryParams.set("port", String(session.port));
-  }
-  if (session.label) {
-    queryParams.set("label", session.label);
-  }
-
-  const targetUrl = isDev
-    ? `${DEV_SERVER_URL.replace(/\/$/, "")}/session?${queryParams.toString()}`
-    : `app://-/session/index.html?${queryParams.toString()}`;
-
-  detachedWindow
-    .loadURL(targetUrl)
-    .catch((error) => console.error("Failed to load detached session window", error));
-
-  sessionWindowMap.set(sessionId, detachedWindow);
-
-  return detachedWindow;
 }
 
 function createMainWindow() {
@@ -1084,59 +961,6 @@ ipcMain.handle("window:toggle-maximize", (event) => {
     target.maximize();
   }
   return getWindowState(target);
-});
-
-ipcMain.handle("window:open-session", (_event, payload: { sessionId?: string; title?: string } = {}) => {
-  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
-  if (!sessionId) {
-    return false;
-  }
-  if (!terminalSessions.has(sessionId)) {
-    return false;
-  }
-  const existingWindow = sessionWindowMap.get(sessionId);
-  if (existingWindow && !existingWindow.isDestroyed()) {
-    if (existingWindow.isMinimized()) {
-      existingWindow.restore();
-    }
-    existingWindow.focus();
-    return true;
-  }
-  try {
-    createDetachedSessionWindow(sessionId, payload.title);
-    return true;
-  } catch (error) {
-    console.error("Failed to open detached session window", sessionId, error);
-    return false;
-  }
-});
-
-ipcMain.handle("window:reattach-session", (_event, payload: { sessionId?: string } = {}) => {
-  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
-  if (!sessionId) {
-    return null;
-  }
-  const session = terminalSessions.get(sessionId);
-  if (!session) {
-    return null;
-  }
-
-  const detachedWindow = sessionWindowMap.get(sessionId);
-  if (detachedWindow && !detachedWindow.isDestroyed()) {
-    try {
-      reattachPendingWindows.set(sessionId, detachedWindow);
-      detachedWindow.close();
-    } catch (error) {
-      console.warn("Failed to close detached session window during reattach", sessionId, error);
-    }
-  }
-
-  return {
-    id: sessionId,
-    host: session.host,
-    port: session.port,
-    label: session.label,
-  } satisfies { id: string; host?: string; port?: number; label?: string };
 });
 
 ipcMain.on("window:minimize", (event) => {
