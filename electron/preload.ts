@@ -8,6 +8,7 @@ type TerminalDimensions = {
 type TerminalCreateOptions = {
   host?: string;
   port?: number;
+  label?: string;
   dimensions?: TerminalDimensions;
 };
 
@@ -24,6 +25,7 @@ type TerminalDescribeResult = {
   id: string;
   host?: string;
   port?: number;
+  label?: string;
 };
 
 type TerminalDataPayload = {
@@ -51,6 +53,7 @@ type WindowStatePayload = {
 type TelnetLaunchRequest = {
   host: string;
   port?: number;
+  label?: string;
 };
 
 type PnetlabHealthRequest = {
@@ -79,6 +82,7 @@ declare global {
         sendSignal: (id: string, signal: string) => void;
         attach: (options: TerminalAttachOptions) => Promise<boolean>;
         describe: (id: string) => Promise<TerminalDescribeResult | null>;
+        readBuffer: (id: string) => Promise<string>;
         onData: (callback: (payload: TerminalDataPayload) => void) => () => void;
         onExit: (callback: (payload: TerminalExitPayload) => void) => () => void;
         onError: (callback: (payload: TerminalErrorPayload) => void) => () => void;
@@ -122,6 +126,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke("terminal:attach", options) as Promise<boolean>,
     describe: (id: string) =>
       ipcRenderer.invoke("terminal:describe", { id }) as Promise<TerminalDescribeResult | null>,
+    readBuffer: (id: string) =>
+      ipcRenderer.invoke("terminal:get-buffer", { id }) as Promise<string>,
     onData: (callback: (payload: TerminalDataPayload) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: TerminalDataPayload) => {
         callback(payload);

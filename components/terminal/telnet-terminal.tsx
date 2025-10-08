@@ -7,6 +7,7 @@ import type { FitAddon as FitAddonClass } from "@xterm/addon-fit";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { HomeDictionary } from "@/lib/i18n/dictionaries";
+import { cn } from "@/lib/utils";
 
 export type TerminalStatus = "idle" | "connecting" | "connected" | "closed" | "error";
 
@@ -29,6 +30,8 @@ export type TelnetTerminalProps = {
   isVisible?: boolean;
   disposeOnUnmount?: boolean;
   showControls?: boolean;
+  label?: string;
+  className?: string;
 };
 
 type CleanupDisposer = (() => void) | null;
@@ -45,6 +48,8 @@ export function TelnetTerminal({
   isVisible = true,
   disposeOnUnmount = true,
   showControls = true,
+  label,
+  className,
 }: TelnetTerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
@@ -57,6 +62,7 @@ export function TelnetTerminal({
   const autoConnectTokenRef = useRef<number | undefined>(undefined);
   const disposeOnUnmountRef = useRef<boolean>(disposeOnUnmount);
   const previousVisibilityRef = useRef<boolean>(isVisible);
+  const hasHydratedBufferRef = useRef(false);
 
   const [status, setStatus] = useState<TerminalStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +117,7 @@ export function TelnetTerminal({
       fitAddonRef.current = null;
 
       sessionIdRef.current = null;
+  hasHydratedBufferRef.current = false;
 
       if (killProcess && sessionId && window.desktopBridge?.terminal) {
         try {
@@ -182,6 +189,7 @@ export function TelnetTerminal({
 
     setStatus("connecting");
     setError(null);
+  hasHydratedBufferRef.current = false;
 
     const [{ Terminal }, { FitAddon }] = await Promise.all([
       import("@xterm/xterm"),
@@ -232,12 +240,17 @@ export function TelnetTerminal({
       let resolvedSessionId = sessionIdRef.current;
 
       if (mode === "attach" && sessionId) {
-        await window.desktopBridge.terminal.attach({ id: sessionId, dimensions });
         resolvedSessionId = sessionId;
+        sessionIdRef.current = sessionId;
+        const attached = await window.desktopBridge.terminal.attach({ id: sessionId, dimensions });
+        if (!attached) {
+          throw new Error(`Unable to attach to existing session ${sessionId}`);
+        }
       } else {
         const { id } = await window.desktopBridge.terminal.createTelnetSession({
           host,
           port,
+          label,
           dimensions,
         });
         resolvedSessionId = id;
@@ -249,6 +262,30 @@ export function TelnetTerminal({
 
       sessionIdRef.current = resolvedSessionId;
       subscribeSessionStreams(resolvedSessionId, terminal);
+
+      const hydrateBuffer = async () => {
+        if (hasHydratedBufferRef.current) {
+          return;
+        }
+        const readBuffer = window.desktopBridge?.terminal?.readBuffer;
+        if (!readBuffer) {
+          hasHydratedBufferRef.current = true;
+          return;
+        }
+        try {
+          const snapshot = await readBuffer(resolvedSessionId);
+          if (snapshot) {
+            terminal.write(snapshot);
+            terminal.scrollToBottom();
+          }
+        } catch (hydrateError) {
+          console.warn("Failed to hydrate terminal buffer", hydrateError);
+        } finally {
+          hasHydratedBufferRef.current = true;
+        }
+      };
+
+      void hydrateBuffer();
 
       terminal.onData((data: string) => {
         if (sessionIdRef.current) {
@@ -273,7 +310,7 @@ export function TelnetTerminal({
       setStatus("error");
       await cleanupSession(true);
     }
-  }, [cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, mode, onSessionCreated, port, sessionId, subscribeSessionStreams]);
+  }, [cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, label, mode, onSessionCreated, port, sessionId, subscribeSessionStreams]);
 
   useEffect(() => {
     if (mode === "attach" && sessionId && status === "idle") {
@@ -357,7 +394,7 @@ export function TelnetTerminal({
   };
 
   return (
-    <div className="flex w-full flex-col gap-4">
+    <div className={cn("flex w-full flex-1 flex-col gap-4", className)}>
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {showControls ? (
@@ -391,10 +428,10 @@ export function TelnetTerminal({
           </p>
         )}
       </div>
-  {showControls && <Separator className="bg-border/60" />}
+      {showControls && <Separator className="bg-border/60" />}
       <div
         ref={containerRef}
-        className="h-[360px] w-full overflow-hidden rounded-lg border border-border bg-card/90 shadow-inner"
+        className="flex-1 min-h-[360px] w-full overflow-hidden rounded-lg border border-border bg-card/90 shadow-inner"
       />
     </div>
   );

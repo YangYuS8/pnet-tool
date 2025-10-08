@@ -37,6 +37,7 @@ function DetachedSessionContent() {
   const sessionIdParam = searchParams.get("sessionId");
   const hostParam = searchParams.get("host") ?? "";
   const portParam = searchParams.get("port");
+  const labelParam = searchParams.get("label") ?? "";
 
   const sessionId = useMemo(() => {
     return sessionIdParam && sessionIdParam.trim().length > 0 ? sessionIdParam : null;
@@ -48,6 +49,7 @@ function DetachedSessionContent() {
     const parsed = portParam ? Number.parseInt(portParam, 10) : NaN;
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   });
+  const [resolvedLabel, setResolvedLabel] = useState<string>(labelParam);
 
   useEffect(() => {
     if (!sessionId || !window.desktopBridge?.terminal?.describe) {
@@ -65,6 +67,9 @@ function DetachedSessionContent() {
         }
         if (typeof details.port === "number" && Number.isFinite(details.port) && details.port > 0) {
           setResolvedPort(details.port);
+        }
+        if (details.label) {
+          setResolvedLabel(details.label);
         }
       })
       .catch((describeError) => {
@@ -86,8 +91,18 @@ function DetachedSessionContent() {
     if (resolvedHost) {
       return resolvedPort ? `${resolvedHost}:${resolvedPort}` : resolvedHost;
     }
-    return terminalDictionary.detachedWindow.title;
+    return "";
   }, [resolvedHost, resolvedPort]);
+
+  const titleDisplay = useMemo(() => {
+    if (resolvedLabel?.trim()) {
+      return resolvedLabel.trim();
+    }
+    if (hostDisplay) {
+      return hostDisplay;
+    }
+    return terminalDictionary.detachedWindow.title;
+  }, [hostDisplay, resolvedLabel]);
 
   const terminalCard = useMemo(() => {
     if (!sessionId) {
@@ -106,6 +121,7 @@ function DetachedSessionContent() {
         <TelnetTerminal
           host={resolvedHost}
           port={resolvedPort ?? DEFAULT_TELNET_PORT}
+          label={resolvedLabel}
           dictionary={terminalDictionary}
           onStatusChange={handleStatusChange}
           sessionId={sessionId}
@@ -115,24 +131,21 @@ function DetachedSessionContent() {
         />
       </div>
     );
-  }, [handleStatusChange, resolvedHost, resolvedPort, sessionId]);
+  }, [handleStatusChange, resolvedHost, resolvedPort, resolvedLabel, sessionId]);
 
   return (
     <DesktopWindowChrome>
       <div className="flex h-full w-full flex-col bg-background">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
           <div className="space-y-0.5">
-            <p className="text-sm font-semibold text-foreground">
-              {terminalDictionary.detachedWindow.title}
+            <p className="text-sm font-semibold text-foreground" title={titleDisplay}>
+              {titleDisplay}
             </p>
             <p className="text-xs text-muted-foreground">
-              {terminalDictionary.detachedWindow.subtitle}
+              {hostDisplay || terminalDictionary.detachedWindow.subtitle}
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="truncate text-sm font-medium text-foreground">
-              {hostDisplay}
-            </span>
             <span className={cn("flex items-center gap-1", statusTone[status])}>
               <Circle className="h-3 w-3 fill-current" />
               {statusLabel}

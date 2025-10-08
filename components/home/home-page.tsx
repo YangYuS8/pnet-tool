@@ -20,13 +20,6 @@ import {
 } from "@/components/terminal/telnet-terminal";
 import { SessionTabs } from "@/components/home/session-tabs";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -114,6 +107,7 @@ const DEFAULT_TELNET_PORT = 23;
 type TelnetLaunchRequest = {
   host: string;
   port?: number;
+  label?: string;
 };
 
 type ManagedSession = {
@@ -121,6 +115,7 @@ type ManagedSession = {
   sessionId?: string;
   host: string;
   port: number;
+  label: string;
   autoConnectToken: number;
   status: TerminalStatus;
   error: string | null;
@@ -158,7 +153,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
   }, []);
 
   const createSessionEntry = useCallback(
-    (hostValue: string, portValue?: number) => {
+    (hostValue: string, portValue?: number, labelValue?: string | null) => {
       const trimmedHost = hostValue.trim();
       if (!trimmedHost) {
         setStatus({ state: "offline", message: dictionary.errors.missingIp });
@@ -172,11 +167,14 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
 
       const key = generateSessionKey();
       const autoToken = generateAutoToken();
+      const sessionLabel =
+        typeof labelValue === "string" && labelValue.trim().length > 0 ? labelValue.trim() : trimmedHost;
 
       const newSession: ManagedSession = {
         key,
         host: trimmedHost,
         port: portNumber,
+        label: sessionLabel,
         autoConnectToken: autoToken,
         status: "idle",
         error: null,
@@ -313,7 +311,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
         return;
       }
       setIp(request.host);
-      createSessionEntry(request.host, request.port);
+      createSessionEntry(request.host, request.port, request.label ?? null);
     },
     [createSessionEntry]
   );
@@ -381,9 +379,11 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
         )
       );
 
-      const titleLabel = target.host
-        ? `${target.host}${target.port ? `:${target.port}` : ""}`
-        : target.sessionId;
+      const titleLabel = target.label
+        ? target.label
+        : target.host
+          ? `${target.host}${target.port ? `:${target.port}` : ""}`
+          : target.sessionId;
 
       try {
         const success = await openSessionWindow({ sessionId: target.sessionId, title: titleLabel });
@@ -521,10 +521,9 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
               </Button>
             </div>
           </section>
-
           <Separator className="bg-border/60" />
 
-          <section className="space-y-3 rounded-xl border border-dashed border-border/60 bg-background/60 p-4">
+          <section className="space-y-3 rounded-xl border border-border/60 bg-background/70 p-4">
             <div className="flex items-center gap-3">
               {status.state === "online" ? (
                 <Gauge className="h-5 w-5 text-green-500" />
@@ -539,14 +538,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
                 </p>
                 <p className="text-xs text-muted-foreground">{statusDescription}</p>
               </div>
-            </div>
-            <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-              <p>{dictionary.sidebar.futurePlanHint}</p>
-              <ul className="mt-1 list-disc space-y-1 pl-5">
-                {dictionary.sidebar.futurePlans.map((plan) => (
-                  <li key={plan}>{plan}</li>
-                ))}
-              </ul>
             </div>
             <p className="text-xs text-muted-foreground/80">
               {dictionary.sidebar.lastCheckPrefix}
@@ -588,66 +579,61 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
           </div>
         </header>
 
-        <section className="flex flex-1 flex-col gap-6 px-6 py-6">
-          <Card className="flex min-h-[520px] flex-1 flex-col overflow-hidden">
-            <CardHeader className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-1">
-                <CardTitle>{dictionary.main.cardTitle}</CardTitle>
-                <CardDescription>{dictionary.main.cardDescription}</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col gap-4 p-6">
-              <div className="flex flex-1 flex-col gap-3">
-                <SessionTabs
-                  sessions={sessions.map((session) => ({
-                    key: session.key,
-                    host: session.host,
-                    port: session.port,
-                    status: session.status,
-                    isActive: session.key === activeSessionKey,
-                    isDetaching: session.isDetaching,
-                  }))}
-                  dictionary={dictionary.terminal}
-                  onSelect={handleSelectSession}
-                  onClose={handleCloseSession}
-                  onDetach={handleDetachSession}
-                />
+        <section className="flex flex-1 flex-col gap-4 px-6 py-6">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-border/70 bg-background/80 p-5 shadow-sm">
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <SessionTabs
+                sessions={sessions.map((session) => ({
+                  key: session.key,
+                  host: session.host,
+                  port: session.port,
+                  label: session.label,
+                  status: session.status,
+                  isActive: session.key === activeSessionKey,
+                  isDetaching: session.isDetaching,
+                }))}
+                dictionary={dictionary.terminal}
+                onSelect={handleSelectSession}
+                onClose={handleCloseSession}
+                onDetach={handleDetachSession}
+              />
 
-                {sessions.length > 0 && (
-                  <div className="relative flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner min-h-[360px]">
-                    {sessions.map((session) => {
-                      const isActive = session.key === activeSessionKey;
-                      return (
-                        <div
-                          key={session.key}
-                          className={cn(
-                            "absolute inset-0 flex flex-col transition-opacity duration-200",
-                            isActive ? "z-10 opacity-100" : "pointer-events-none opacity-0"
-                          )}
-                          aria-hidden={!isActive}
-                        >
-                          <TelnetTerminal
-                            host={session.host}
-                            port={session.port}
-                            dictionary={dictionary.terminal}
-                            autoConnectSignal={session.autoConnectToken}
-                            onStatusChange={handleSessionStatusChange(session.key)}
-                            onSessionCreated={handleSessionCreated(session.key)}
-                            sessionId={session.sessionId}
-                            isVisible={isActive}
-                            disposeOnUnmount={session.disposeOnUnmount}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              {terminalErrorMessage && (
-                <p className="text-xs text-destructive/80">{terminalErrorMessage}</p>
+              {sessions.length > 0 && (
+                <div className="relative flex min-h-[420px] flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner">
+                  {sessions.map((session) => {
+                    const isActive = session.key === activeSessionKey;
+                    return (
+                      <div
+                        key={session.key}
+                        className={cn(
+                          "absolute inset-0 flex flex-col transition-opacity duration-200",
+                          isActive ? "z-10 opacity-100" : "pointer-events-none opacity-0"
+                        )}
+                        aria-hidden={!isActive}
+                      >
+                        <TelnetTerminal
+                          host={session.host}
+                          port={session.port}
+                          label={session.label}
+                          dictionary={dictionary.terminal}
+                          autoConnectSignal={session.autoConnectToken}
+                          onStatusChange={handleSessionStatusChange(session.key)}
+                          onSessionCreated={handleSessionCreated(session.key)}
+                          sessionId={session.sessionId}
+                          isVisible={isActive}
+                          disposeOnUnmount={session.disposeOnUnmount}
+                          className="flex-1"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+            {terminalErrorMessage && (
+              <p className="text-xs text-destructive/80">{terminalErrorMessage}</p>
+            )}
+          </div>
         </section>
       </main>
     </div>

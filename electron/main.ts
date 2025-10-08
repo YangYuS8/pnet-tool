@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { app, BrowserWindow, ipcMain, nativeTheme, protocol, shell } from "electron";
+import { app, BrowserWindow, ipcMain, nativeImage, nativeTheme, protocol, shell } from "electron";
 import type { IPty } from "node-pty";
 import { spawn } from "node-pty";
 
@@ -25,6 +25,14 @@ type PnetlabHealthProbeResult =
 
 function sanitizePnetlabHost(host: string): boolean {
   return PNETLAB_HOST_PATTERN.test(host);
+}
+
+function normalizeLabel(label?: string | null) {
+  if (typeof label !== "string") {
+    return undefined;
+  }
+  const trimmed = label.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 async function probePnetlabHealth(
@@ -184,6 +192,7 @@ type TerminalDimensions = {
 type TerminalLaunchOptions = {
   host?: string;
   port?: number;
+  label?: string;
   dimensions?: TerminalDimensions;
 };
 
@@ -192,6 +201,8 @@ type TerminalSession = {
   sender: Electron.WebContents;
   host?: string;
   port?: number;
+  label?: string;
+  buffer: string;
   destroyListener?: () => void;
 };
 
@@ -199,6 +210,7 @@ const terminalSessions = new Map<string, TerminalSession>();
 type TelnetLaunchRequest = {
   host: string;
   port?: number;
+  label?: string;
 };
 
 type PnetlabHealthCheckPayload = {
@@ -209,6 +221,63 @@ type PnetlabHealthCheckPayload = {
 const pendingTelnetRequests: TelnetLaunchRequest[] = [];
 let telnetBridgeReady = false;
 const sessionWindows = new Set<BrowserWindow>();
+
+const MAX_TERMINAL_BUFFER_CHARS = 120_000;
+
+let cachedAppIcon: Electron.NativeImage | null | undefined;
+
+function resolveIconCandidates() {
+  if (app.isPackaged) {
+    return [
+      path.join(process.resourcesPath, "build/icons/pnet-tool.png"),
+      path.join(process.resourcesPath, "build/icons/pnet-tool.svg"),
+    ];
+  }
+
+  const baseDir = path.join(__dirname, "..");
+  return [
+    path.join(baseDir, "build/icons/pnet-tool.png"),
+    path.join(baseDir, "build/icons/pnet-tool.svg"),
+    path.join(process.cwd(), "build/icons/pnet-tool.png"),
+    path.join(process.cwd(), "build/icons/pnet-tool.svg"),
+  ];
+}
+
+function loadNativeImage(candidate: string) {
+  try {
+    const stats = fs.statSync(candidate, { throwIfNoEntry: false });
+    if (!stats?.isFile()) {
+      return null;
+    }
+    if (candidate.endsWith(".svg")) {
+      const buffer = fs.readFileSync(candidate);
+      const image = nativeImage.createFromBuffer(buffer, { scaleFactor: 1 });
+      return image.isEmpty() ? null : image;
+    }
+    const image = nativeImage.createFromPath(candidate);
+    return image.isEmpty() ? null : image;
+  } catch (error) {
+    console.warn("Failed to load application icon", candidate, error);
+    return null;
+  }
+}
+
+function getAppIcon() {
+  if (cachedAppIcon !== undefined) {
+    return cachedAppIcon ?? undefined;
+  }
+
+  for (const candidate of resolveIconCandidates()) {
+    const image = loadNativeImage(candidate);
+    if (image) {
+      cachedAppIcon = image;
+      return cachedAppIcon;
+    }
+  }
+
+  cachedAppIcon = null;
+  return undefined;
+}
 
 function enqueueTelnetRequest(request: TelnetLaunchRequest) {
   pendingTelnetRequests.push(request);
@@ -244,9 +313,19 @@ function parseTelnetUrl(rawUrl: string): TelnetLaunchRequest | null {
       typeof portNumber === "number" && Number.isFinite(portNumber) && portNumber > 0
         ? portNumber
         : undefined;
+    const rawLabel =
+      url.searchParams.get("name") ??
+      url.searchParams.get("label") ??
+      url.searchParams.get("device") ??
+      url.username ??
+      (url.pathname && url.pathname !== "/"
+        ? decodeURIComponent(url.pathname.replace(/^\//, ""))
+        : undefined);
+    const label = rawLabel?.trim() ? rawLabel.trim() : undefined;
     return {
       host,
       port: normalizedPort,
+      label,
     };
   } catch (error) {
     console.warn("Failed to parse telnet url", rawUrl, error);
@@ -343,7 +422,9 @@ function createDetachedSessionWindow(sessionId: string, title?: string) {
   }
 
   const windowTitle =
-    title ?? (session.host ? `Telnet ${session.host}${session.port ? `:${session.port}` : ""}` : "Telnet Session");
+    title ??
+    session.label ??
+    (session.host ? `Telnet ${session.host}${session.port ? `:${session.port}` : ""}` : "Telnet Session");
 
   const detachedWindow = new BrowserWindow({
     width: 1080,
@@ -354,6 +435,7 @@ function createDetachedSessionWindow(sessionId: string, title?: string) {
     show: false,
     frame: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f5f5",
+    icon: getAppIcon(),
     webPreferences: {
       preload: PRELOAD_PATH,
       nodeIntegration: false,
@@ -382,6 +464,9 @@ function createDetachedSessionWindow(sessionId: string, title?: string) {
   if (session.port) {
     queryParams.set("port", String(session.port));
   }
+  if (session.label) {
+    queryParams.set("label", session.label);
+  }
 
   const targetUrl = isDev
     ? `${DEV_SERVER_URL.replace(/\/$/, "")}/session?${queryParams.toString()}`
@@ -407,6 +492,7 @@ function createMainWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0f1115" : "#f5f5f5",
     vibrancy: process.platform === "darwin" ? "under-window" : undefined,
     trafficLightPosition: undefined,
+    icon: getAppIcon(),
     webPreferences: {
       preload: PRELOAD_PATH,
       nodeIntegration: false,
@@ -574,6 +660,7 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
   const dimensions = rawOptions.dimensions ?? {};
   const cols = sanitizeDimension(dimensions.cols, 80, 2, 500);
   const rows = sanitizeDimension(dimensions.rows, 24, 1, 200);
+  const normalizedLabel = normalizeLabel(rawOptions.label);
 
   try {
     const pty = spawn(getDefaultShell(), getDefaultShellArgs(), {
@@ -589,6 +676,8 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
       sender,
       host: rawOptions.host,
       port: rawOptions.port,
+      label: normalizedLabel,
+      buffer: "",
     };
 
     terminalSessions.set(id, session);
@@ -604,6 +693,10 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
 
     pty.onData((data) => {
       safeSend("terminal:data", { id, data });
+      const currentSession = terminalSessions.get(id);
+      if (currentSession) {
+        currentSession.buffer = `${currentSession.buffer}${data}`.slice(-MAX_TERMINAL_BUFFER_CHARS);
+      }
     });
 
     pty.onExit((exit) => {
@@ -680,7 +773,20 @@ ipcMain.handle("terminal:describe", (_event, payload: { id?: string } = {}) => {
     id,
     host: session.host,
     port: session.port,
-  } satisfies { id: string; host?: string; port?: number };
+    label: session.label,
+  } satisfies { id: string; host?: string; port?: number; label?: string };
+});
+
+ipcMain.handle("terminal:get-buffer", (_event, payload: { id?: string } = {}) => {
+  const id = typeof payload.id === "string" ? payload.id : "";
+  if (!id) {
+    return "";
+  }
+  const session = terminalSessions.get(id);
+  if (!session) {
+    return "";
+  }
+  return session.buffer;
 });
 
 ipcMain.handle("terminal:dispose", (_event, id: string) => disposeTerminalSession(id));

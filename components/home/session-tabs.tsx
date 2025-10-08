@@ -14,6 +14,7 @@ type SessionTabDescriptor = {
   key: string;
   host: string;
   port: number;
+  label?: string;
   status: TerminalStatus;
   isActive: boolean;
   isDetaching?: boolean;
@@ -64,6 +65,14 @@ export function SessionTabs({ sessions, dictionary, onSelect, onClose, onDetach 
           const isActive = session.isActive;
           const isDetaching = Boolean(session.isDetaching);
           const statusLabel = dictionary.status[session.status];
+          const primaryLabel = session.label?.trim().length
+            ? session.label
+            : session.host || dictionary.sessionTabs.emptyTitle;
+          const hostDisplay = session.host
+            ? session.port
+              ? `${session.host}:${session.port}`
+              : session.host
+            : undefined;
           return (
             <div
               key={session.key}
@@ -81,10 +90,14 @@ export function SessionTabs({ sessions, dictionary, onSelect, onClose, onDetach 
                 onClick={() => onSelect(session.key)}
                 disabled={isActive || isDetaching}
               >
-                <span className="truncate text-sm font-semibold text-foreground/90">
-                  {session.host || "telnet"}
-                  {session.port ? `:${session.port}` : ""}
+                <span className="truncate text-sm font-semibold text-foreground/90" title={primaryLabel}>
+                  {primaryLabel}
                 </span>
+                {hostDisplay && (
+                  <span className="truncate text-[11px] text-muted-foreground" title={hostDisplay}>
+                    {hostDisplay}
+                  </span>
+                )}
                 <span className={cn("flex items-center gap-1 text-[11px]", statusTone[session.status])}>
                   <Circle className="h-[7px] w-[7px] fill-current" />
                   {statusLabel}
