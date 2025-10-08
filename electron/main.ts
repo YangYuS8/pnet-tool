@@ -203,6 +203,7 @@ type TerminalSession = {
   port?: number;
   label?: string;
   buffer: string;
+  matchKey?: string | null;
   destroyListener?: () => void;
 };
 
@@ -213,14 +214,32 @@ type TelnetLaunchRequest = {
   label?: string;
 };
 
+type TelnetActivateAction = {
+  type: "activate";
+  sessionId: string;
+  host?: string;
+  port?: number;
+  label?: string;
+};
+
+type TelnetOpenAction = {
+  type: "open";
+  request: TelnetLaunchRequest;
+};
+
+type TelnetAction = TelnetActivateAction | TelnetOpenAction;
+
 type PnetlabHealthCheckPayload = {
   ip?: string;
   port?: number;
 };
 
-const pendingTelnetRequests: TelnetLaunchRequest[] = [];
+const pendingTelnetActions: TelnetAction[] = [];
 let telnetBridgeReady = false;
 const sessionWindows = new Set<BrowserWindow>();
+const sessionWindowMap = new Map<string, BrowserWindow>();
+const reattachPendingWindows = new Map<string, BrowserWindow>();
+const sessionKeyIndex = new Map<string, string>();
 
 const MAX_TERMINAL_BUFFER_CHARS = 120_000;
 
@@ -279,23 +298,163 @@ function getAppIcon() {
   return undefined;
 }
 
-function enqueueTelnetRequest(request: TelnetLaunchRequest) {
-  pendingTelnetRequests.push(request);
-  dispatchTelnetRequests();
+function normalizePort(port?: number) {
+  if (typeof port !== "number" || !Number.isFinite(port) || port <= 0) {
+    return undefined;
+  }
+  return port;
 }
 
-function dispatchTelnetRequests() {
+function makeSessionKey(host?: string, port?: number) {
+  if (!host) {
+    return null;
+  }
+  const normalizedPort = normalizePort(port);
+  return `${host}:${normalizedPort ?? ""}`;
+}
+
+function appendSessionBuffer(session: TerminalSession, chunk: string) {
+  session.buffer = `${session.buffer}${chunk}`.slice(-MAX_TERMINAL_BUFFER_CHARS);
+}
+
+function deliverToRenderers(channel: string, payload: Record<string, unknown>) {
+  const recipients = new Set<Electron.WebContents>();
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    recipients.add(mainWindow.webContents);
+  }
+  sessionWindows.forEach((window) => {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      recipients.add(window.webContents);
+    }
+  });
+  recipients.forEach((target) => {
+    try {
+      target.send(channel, payload);
+    } catch (error) {
+      console.warn(`Failed to deliver ${channel} payload`, error);
+    }
+  });
+}
+
+function detectPromptLabel(buffer: string) {
+  const lines = buffer.split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const rawLine = lines[index];
+    if (!rawLine) {
+      continue;
+    }
+    const line = rawLine.trimEnd();
+    if (!line) {
+      continue;
+    }
+
+    const iosLikeMatch = line.match(/^([A-Za-z0-9][\w.-]{0,63})(?:\(.+\))?[>#]$/);
+    if (iosLikeMatch) {
+      return iosLikeMatch[1];
+    }
+
+    const shellMatch = line.match(/^([A-Za-z0-9._-]{1,64})(?:@[A-Za-z0-9._-]+)?(?::[~\w/.-]+)?\s?[#$]$/);
+    if (shellMatch) {
+      return shellMatch[1];
+    }
+  }
+  return null;
+}
+
+function updateSessionLabel(id: string, session: TerminalSession, candidate?: string | null) {
+  const nextLabel = candidate?.trim();
+  if (!nextLabel || nextLabel.length === 0) {
+    return;
+  }
+  if (session.label === nextLabel) {
+    return;
+  }
+  session.label = nextLabel;
+  deliverToRenderers("terminal:label", {
+    id,
+    label: nextLabel,
+    host: session.host,
+    port: session.port,
+  });
+}
+
+function enqueueTelnetAction(action: TelnetAction) {
+  pendingTelnetActions.push(action);
+  dispatchTelnetActions();
+}
+
+function enqueueTelnetOpen(request: TelnetLaunchRequest) {
+  enqueueTelnetAction({ type: "open", request });
+}
+
+function enqueueTelnetActivate(action: TelnetActivateAction) {
+  enqueueTelnetAction(action);
+}
+
+function dispatchTelnetActions() {
   if (!telnetBridgeReady) {
     return;
   }
   if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
     return;
   }
-  if (pendingTelnetRequests.length === 0) {
+  if (pendingTelnetActions.length === 0) {
     return;
   }
-  const payload = pendingTelnetRequests.splice(0, pendingTelnetRequests.length);
+  const payload = pendingTelnetActions.splice(0, pendingTelnetActions.length);
   mainWindow.webContents.send("telnet:requests", payload);
+}
+
+function handleIncomingTelnetRequest(request: TelnetLaunchRequest) {
+  const normalizedLabel = normalizeLabel(request.label ?? null);
+  const key = makeSessionKey(request.host, request.port);
+
+  if (key) {
+    const existingId = sessionKeyIndex.get(key);
+    if (existingId) {
+      const session = terminalSessions.get(existingId);
+      if (session) {
+        if (normalizedLabel) {
+          updateSessionLabel(existingId, session, normalizedLabel);
+        }
+        const activatePayload: TelnetActivateAction = {
+          type: "activate",
+          sessionId: existingId,
+          host: session.host,
+          port: session.port,
+          label: normalizeLabel(session.label ?? normalizedLabel ?? null) ?? undefined,
+        };
+        enqueueTelnetActivate(activatePayload);
+
+        const targetWindow = sessionWindowMap.get(existingId);
+        if (targetWindow && !targetWindow.isDestroyed()) {
+          if (targetWindow.isMinimized()) {
+            targetWindow.restore();
+          }
+          targetWindow.focus();
+        } else if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.isMinimized()) {
+            mainWindow.restore();
+          }
+          mainWindow.focus();
+        }
+        return;
+      }
+    }
+  }
+
+  enqueueTelnetOpen({
+    host: request.host,
+    port: request.port,
+    label: normalizedLabel ?? undefined,
+  });
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+  }
 }
 
 function parseTelnetUrl(rawUrl: string): TelnetLaunchRequest | null {
@@ -336,7 +495,7 @@ function parseTelnetUrl(rawUrl: string): TelnetLaunchRequest | null {
 function ingestTelnetUrl(rawUrl: string) {
   const request = parseTelnetUrl(rawUrl);
   if (request) {
-    enqueueTelnetRequest(request);
+    handleIncomingTelnetRequest(request);
   }
 }
 
@@ -385,6 +544,23 @@ function disposeTerminalSession(id: string) {
       console.warn("Failed to detach destroy listener", id, error);
     }
   }
+  if (session.matchKey) {
+    const mappedId = sessionKeyIndex.get(session.matchKey);
+    if (mappedId === id) {
+      sessionKeyIndex.delete(session.matchKey);
+    }
+  }
+
+  const attachedWindow = sessionWindowMap.get(id);
+  if (attachedWindow && !attachedWindow.isDestroyed()) {
+    try {
+      attachedWindow.close();
+    } catch (error) {
+      console.warn("Failed to close session window during dispose", id, error);
+    }
+  }
+  sessionWindowMap.delete(id);
+  reattachPendingWindows.delete(id);
   terminalSessions.delete(id);
   return true;
 }
@@ -411,6 +587,22 @@ function attachSessionToSender(id: string, sender: Electron.WebContents) {
 
   session.sender = sender;
   session.destroyListener = destroyListener;
+
+  const owningWindow = BrowserWindow.fromWebContents(sender) ?? null;
+  if (!owningWindow || owningWindow === mainWindow) {
+    sessionWindowMap.delete(id);
+    reattachPendingWindows.delete(id);
+  } else if (!owningWindow.isDestroyed()) {
+    if (sessionWindowMap.get(id) !== owningWindow) {
+      owningWindow.once("closed", () => {
+        if (sessionWindowMap.get(id) === owningWindow) {
+          sessionWindowMap.delete(id);
+        }
+        reattachPendingWindows.delete(id);
+      });
+    }
+    sessionWindowMap.set(id, owningWindow);
+  }
 
   return true;
 }
@@ -455,6 +647,10 @@ function createDetachedSessionWindow(sessionId: string, title?: string) {
 
   detachedWindow.on("closed", () => {
     sessionWindows.delete(detachedWindow);
+    if (sessionWindowMap.get(sessionId) === detachedWindow) {
+      sessionWindowMap.delete(sessionId);
+    }
+    reattachPendingWindows.delete(sessionId);
   });
 
   const queryParams = new URLSearchParams({ sessionId });
@@ -475,6 +671,8 @@ function createDetachedSessionWindow(sessionId: string, title?: string) {
   detachedWindow
     .loadURL(targetUrl)
     .catch((error) => console.error("Failed to load detached session window", error));
+
+  sessionWindowMap.set(sessionId, detachedWindow);
 
   return detachedWindow;
 }
@@ -535,7 +733,7 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.on("did-finish-load", () => {
-    dispatchTelnetRequests();
+    dispatchTelnetActions();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -660,7 +858,10 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
   const dimensions = rawOptions.dimensions ?? {};
   const cols = sanitizeDimension(dimensions.cols, 80, 2, 500);
   const rows = sanitizeDimension(dimensions.rows, 24, 1, 200);
-  const normalizedLabel = normalizeLabel(rawOptions.label);
+  const normalizedHost = rawOptions.host?.trim() ?? undefined;
+  const normalizedPort = normalizePort(rawOptions.port);
+  const normalizedLabel = normalizeLabel(rawOptions.label ?? normalizedHost ?? null);
+  const matchKey = makeSessionKey(normalizedHost, normalizedPort);
 
   try {
     const pty = spawn(getDefaultShell(), getDefaultShellArgs(), {
@@ -674,14 +875,23 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
     const session: TerminalSession = {
       pty,
       sender,
-      host: rawOptions.host,
-      port: rawOptions.port,
-      label: normalizedLabel,
+      host: normalizedHost,
+      port: normalizedPort,
+      label: normalizedLabel ?? undefined,
       buffer: "",
+      matchKey,
     };
 
     terminalSessions.set(id, session);
     attachSessionToSender(id, sender);
+
+    if (matchKey) {
+      sessionKeyIndex.set(matchKey, id);
+    }
+
+    if (session.label) {
+      updateSessionLabel(id, session, session.label);
+    }
 
     const safeSend = (channel: string, payload: Record<string, unknown>) => {
       const currentSession = terminalSessions.get(id);
@@ -692,11 +902,13 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
     };
 
     pty.onData((data) => {
-      safeSend("terminal:data", { id, data });
       const currentSession = terminalSessions.get(id);
       if (currentSession) {
-        currentSession.buffer = `${currentSession.buffer}${data}`.slice(-MAX_TERMINAL_BUFFER_CHARS);
+        appendSessionBuffer(currentSession, data);
+        const labelFromBuffer = detectPromptLabel(currentSession.buffer);
+        updateSessionLabel(id, currentSession, labelFromBuffer);
       }
+      safeSend("terminal:data", { id, data });
     });
 
     pty.onExit((exit) => {
@@ -704,9 +916,9 @@ ipcMain.handle("terminal:create", (event, rawOptions: TerminalLaunchOptions = {}
       safeSend("terminal:exit", { id, exitCode: exit.exitCode, signal: exit.signal });
     });
 
-    if (rawOptions.host) {
-      const portFragment = rawOptions.port ? ` ${rawOptions.port}` : "";
-      const launchCommand = `telnet ${rawOptions.host}${portFragment}\r`;
+    if (normalizedHost) {
+      const portFragment = normalizedPort ? ` ${normalizedPort}` : "";
+      const launchCommand = `telnet ${normalizedHost}${portFragment}\r`;
       setTimeout(() => {
         try {
           pty.write(launchCommand);
@@ -866,6 +1078,14 @@ ipcMain.handle("window:open-session", (_event, payload: { sessionId?: string; ti
   if (!terminalSessions.has(sessionId)) {
     return false;
   }
+  const existingWindow = sessionWindowMap.get(sessionId);
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    if (existingWindow.isMinimized()) {
+      existingWindow.restore();
+    }
+    existingWindow.focus();
+    return true;
+  }
   try {
     createDetachedSessionWindow(sessionId, payload.title);
     return true;
@@ -890,7 +1110,7 @@ ipcMain.on("window:close", (event) => {
 
 ipcMain.handle("telnet:bridge-ready", () => {
   telnetBridgeReady = true;
-  const payload = pendingTelnetRequests.splice(0, pendingTelnetRequests.length);
+  const payload = pendingTelnetActions.splice(0, pendingTelnetActions.length);
   return payload;
 });
 
