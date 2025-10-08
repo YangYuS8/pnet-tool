@@ -44,6 +44,13 @@ type TerminalErrorPayload = {
   message: string;
 };
 
+type TerminalLabelPayload = {
+  id: string;
+  label?: string;
+  host?: string;
+  port?: number;
+};
+
 type WindowStatePayload = {
   isMaximized: boolean;
   isFullScreen: boolean;
@@ -55,6 +62,21 @@ type TelnetLaunchRequest = {
   port?: number;
   label?: string;
 };
+
+type TelnetOpenAction = {
+  type: "open";
+  request: TelnetLaunchRequest;
+};
+
+type TelnetActivateAction = {
+  type: "activate";
+  sessionId: string;
+  host?: string;
+  port?: number;
+  label?: string;
+};
+
+type TelnetAction = TelnetOpenAction | TelnetActivateAction;
 
 type PnetlabHealthRequest = {
   ip: string;
@@ -86,6 +108,7 @@ declare global {
         onData: (callback: (payload: TerminalDataPayload) => void) => () => void;
         onExit: (callback: (payload: TerminalExitPayload) => void) => () => void;
         onError: (callback: (payload: TerminalErrorPayload) => void) => () => void;
+        onLabel: (callback: (payload: TerminalLabelPayload) => void) => () => void;
       };
       window?: {
         minimize: () => void;
@@ -94,10 +117,11 @@ declare global {
         getState: () => Promise<WindowStatePayload>;
         onStateChange: (callback: (payload: WindowStatePayload) => void) => () => void;
         openSessionWindow: (payload: { sessionId: string; title?: string }) => Promise<boolean>;
+        reattachSession: (payload: { sessionId: string }) => Promise<TerminalDescribeResult | null>;
       };
       telnet?: {
-        ready: () => Promise<TelnetLaunchRequest[]>;
-        onRequests: (callback: (payload: TelnetLaunchRequest[]) => void) => () => void;
+        ready: () => Promise<TelnetAction[]>;
+        onRequests: (callback: (payload: TelnetAction[]) => void) => () => void;
       };
       pnetlab?: {
         checkHealth: (payload: PnetlabHealthRequest) => Promise<PnetlabHealthResponse>;
@@ -155,6 +179,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.removeListener("terminal:error", listener);
       };
     },
+    onLabel: (callback: (payload: TerminalLabelPayload) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: TerminalLabelPayload) => {
+        callback(payload);
+      };
+      ipcRenderer.on("terminal:label", listener);
+      return () => {
+        ipcRenderer.removeListener("terminal:label", listener);
+      };
+    },
   },
   window: {
     minimize: () => {
@@ -176,11 +209,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     },
     openSessionWindow: (payload: { sessionId: string; title?: string }) =>
       ipcRenderer.invoke("window:open-session", payload) as Promise<boolean>,
+    reattachSession: (payload: { sessionId: string }) =>
+      ipcRenderer.invoke("window:reattach-session", payload) as Promise<TerminalDescribeResult | null>,
   },
   telnet: {
-    ready: () => ipcRenderer.invoke("telnet:bridge-ready") as Promise<TelnetLaunchRequest[]>,
-    onRequests: (callback: (payload: TelnetLaunchRequest[]) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, payload: TelnetLaunchRequest[]) => {
+    ready: () => ipcRenderer.invoke("telnet:bridge-ready") as Promise<TelnetAction[]>,
+    onRequests: (callback: (payload: TelnetAction[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: TelnetAction[]) => {
         callback(payload);
       };
       ipcRenderer.on("telnet:requests", listener);

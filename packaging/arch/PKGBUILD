@@ -42,6 +42,6 @@ package() {
   install -Dm755 "$appimage" "$pkgdir/opt/pnet-tool/pnet-tool.AppImage"
   install -Dm755 packaging/arch/pnet-tool.sh "$pkgdir/usr/bin/pnet-tool"
   install -Dm644 packaging/arch/pnet-tool.desktop "$pkgdir/usr/share/applications/pnet-tool.desktop"
-  install -Dm644 build/icons/pnet-tool.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/pnet-tool.svg"
+  install -Dm644 packaging/arch/pnet-tool.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/pnet-tool.svg"
   install -Dm644 README.md "$pkgdir/usr/share/doc/pnet-tool/README.md"
 }

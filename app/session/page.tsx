@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Circle, Loader2 } from "lucide-react";
+import { Circle, GripVertical, Loader2 } from "lucide-react";
 
 import { DesktopWindowChrome } from "@/components/desktop/window-chrome";
 import {
@@ -80,6 +80,33 @@ function DetachedSessionContent() {
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    if (!sessionId || typeof window === "undefined") {
+      return;
+    }
+    const onLabel = window.desktopBridge?.terminal?.onLabel;
+    if (!onLabel) {
+      return;
+    }
+    const unsubscribe = onLabel(({ id, label, host, port }) => {
+      if (id !== sessionId) {
+        return;
+      }
+      if (typeof label === "string" && label.trim().length > 0) {
+        setResolvedLabel(label.trim());
+      }
+      if (typeof host === "string" && host.trim().length > 0) {
+        setResolvedHost(host.trim());
+      }
+      if (typeof port === "number" && Number.isFinite(port) && port > 0) {
+        setResolvedPort(port);
+      }
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, [sessionId]);
+
   const handleStatusChange = useCallback((payload: TerminalStatusChange) => {
     setStatus(payload.status);
     setError(payload.error ?? null);
@@ -103,6 +130,31 @@ function DetachedSessionContent() {
     }
     return terminalDictionary.detachedWindow.title;
   }, [hostDisplay, resolvedLabel]);
+
+  const handleDragStart = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!sessionId) {
+        return;
+      }
+      event.dataTransfer.effectAllowed = "move";
+      const payload = {
+        type: "detached-session",
+        sessionId,
+        host: resolvedHost,
+        port: resolvedPort,
+        label: resolvedLabel,
+      } satisfies {
+        type: string;
+        sessionId: string;
+        host?: string;
+        port?: number;
+        label?: string;
+      };
+      event.dataTransfer.setData("application/x-pnet-session", JSON.stringify(payload));
+      event.dataTransfer.setData("text/plain", sessionId);
+    },
+    [resolvedHost, resolvedLabel, resolvedPort, sessionId]
+  );
 
   const terminalCard = useMemo(() => {
     if (!sessionId) {
@@ -137,13 +189,22 @@ function DetachedSessionContent() {
     <DesktopWindowChrome>
       <div className="flex h-full w-full flex-col bg-background">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
-          <div className="space-y-0.5">
-            <p className="text-sm font-semibold text-foreground" title={titleDisplay}>
-              {titleDisplay}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {hostDisplay || terminalDictionary.detachedWindow.subtitle}
-            </p>
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-border/60 text-muted-foreground active:cursor-grabbing"
+              draggable={Boolean(sessionId)}
+              onDragStart={handleDragStart}
+            >
+              <GripVertical className="h-4 w-4" />
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-foreground" title={titleDisplay}>
+                {titleDisplay}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {hostDisplay || terminalDictionary.detachedWindow.subtitle}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className={cn("flex items-center gap-1", statusTone[status])}>

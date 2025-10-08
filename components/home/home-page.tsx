@@ -15,6 +15,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   TelnetTerminal,
+  type TerminalMode,
   type TerminalStatus,
   type TerminalStatusChange,
 } from "@/components/terminal/telnet-terminal";
@@ -110,6 +111,21 @@ type TelnetLaunchRequest = {
   label?: string;
 };
 
+type TelnetOpenAction = {
+  type: "open";
+  request: TelnetLaunchRequest;
+};
+
+type TelnetActivateAction = {
+  type: "activate";
+  sessionId: string;
+  host?: string;
+  port?: number;
+  label?: string;
+};
+
+type TelnetAction = TelnetOpenAction | TelnetActivateAction;
+
 type ManagedSession = {
   key: string;
   sessionId?: string;
@@ -120,6 +136,7 @@ type ManagedSession = {
   status: TerminalStatus;
   error: string | null;
   disposeOnUnmount: boolean;
+  mode: TerminalMode;
   isDetaching?: boolean;
 };
 
@@ -179,6 +196,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
         status: "idle",
         error: null,
         disposeOnUnmount: true,
+        mode: "create",
       };
 
       setSessions((prev) => [...prev, newSession]);
@@ -218,6 +236,43 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const onLabel = window.desktopBridge?.terminal?.onLabel;
+    if (!onLabel) {
+      return;
+    }
+    const unsubscribe = onLabel(({ id, label, host, port }) => {
+      if (!id) {
+        return;
+      }
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.sessionId !== id) {
+            return session;
+          }
+          const nextLabel =
+            typeof label === "string" && label.trim().length > 0 ? label.trim() : session.label;
+          const nextHost = host ?? session.host;
+          const nextPort =
+            typeof port === "number" && Number.isFinite(port) && port > 0 ? port : session.port;
+          return {
+            ...session,
+            label: nextLabel,
+            host: nextHost,
+            port: nextPort,
+          };
+        })
+      );
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     activeKeyRef.current = activeSessionKey;
@@ -305,7 +360,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     []
   );
 
-  const handleTelnetLaunch = useCallback(
+  const handleTelnetOpen = useCallback(
     (request: TelnetLaunchRequest) => {
       if (!request.host) {
         return;
@@ -314,6 +369,53 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
       createSessionEntry(request.host, request.port, request.label ?? null);
     },
     [createSessionEntry]
+  );
+
+  const focusSessionById = useCallback(
+    (sessionId: string) => {
+      const target = sessionsRef.current.find((session) => session.sessionId === sessionId);
+      if (target) {
+        setActiveSessionKey(target.key);
+      }
+    },
+    []
+  );
+
+  const handleTelnetAction = useCallback(
+    (action: TelnetAction) => {
+      if (action.type === "open") {
+        handleTelnetOpen(action.request);
+        return;
+      }
+
+      focusSessionById(action.sessionId);
+
+      if (action.label || action.host || typeof action.port === "number") {
+        setSessions((prev) =>
+          prev.map((session) => {
+            if (session.sessionId !== action.sessionId) {
+              return session;
+            }
+            const nextLabel =
+              typeof action.label === "string" && action.label.trim().length > 0
+                ? action.label.trim()
+                : session.label;
+            const nextHost = action.host ?? session.host;
+            const nextPort =
+              typeof action.port === "number" && Number.isFinite(action.port) && action.port > 0
+                ? action.port
+                : session.port;
+            return {
+              ...session,
+              label: nextLabel,
+              host: nextHost,
+              port: nextPort,
+            };
+          })
+        );
+      }
+    },
+    [focusSessionById, handleTelnetOpen]
   );
 
   const handleSelectSession = useCallback((key: string) => {
@@ -355,6 +457,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
       const openSessionWindow = window.desktopBridge?.window?.openSessionWindow;
       if (!openSessionWindow) {
         setSessions((prev) =>
+
           prev.map((session) =>
             session.key === key
               ? {
@@ -418,6 +521,97 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     [dictionary.terminal.desktopOnlyHint]
   );
 
+  const handleTabReorder = useCallback((sourceKey: string, targetKey: string | null) => {
+    setSessions((prev) => {
+      if (sourceKey === targetKey) {
+        return prev;
+      }
+      const sourceIndex = prev.findIndex((session) => session.key === sourceKey);
+      if (sourceIndex === -1) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      if (!moved) {
+        return prev;
+      }
+
+      if (!targetKey) {
+        next.push(moved);
+        return next;
+      }
+
+      let targetIndex = prev.findIndex((session) => session.key === targetKey);
+      if (targetIndex === -1) {
+        next.push(moved);
+        return next;
+      }
+
+      if (sourceIndex < targetIndex) {
+        targetIndex -= 1;
+      }
+
+      next.splice(Math.max(targetIndex, 0), 0, moved);
+      return next;
+    });
+  }, []);
+
+  const handleMergeDetachedSession = useCallback(
+    async (payload: { sessionId: string; host?: string; port?: number; label?: string }) => {
+      const reattachSession = window.desktopBridge?.window?.reattachSession;
+      const trimmedId = payload.sessionId?.trim();
+      if (!reattachSession || !trimmedId) {
+        return;
+      }
+
+      const existing = sessionsRef.current.find((session) => session.sessionId === trimmedId);
+      if (existing) {
+        setActiveSessionKey(existing.key);
+        return;
+      }
+
+      try {
+        const details = await reattachSession({ sessionId: trimmedId });
+        if (!details) {
+          return;
+        }
+
+        const key = generateSessionKey();
+        const autoToken = generateAutoToken();
+        const resolvedHost = details.host ?? payload.host ?? "";
+        const resolvedPort =
+          typeof details.port === "number" && Number.isFinite(details.port) && details.port > 0
+            ? details.port
+            : typeof payload.port === "number" && Number.isFinite(payload.port) && payload.port > 0
+              ? payload.port
+              : DEFAULT_TELNET_PORT;
+        const resolvedLabelSource = details.label ?? payload.label ?? resolvedHost ?? trimmedId;
+        const resolvedLabel = resolvedLabelSource.trim().length > 0 ? resolvedLabelSource.trim() : resolvedHost;
+
+        setSessions((prev) => [
+          ...prev,
+          {
+            key,
+            sessionId: trimmedId,
+            host: resolvedHost,
+            port: resolvedPort,
+            label: resolvedLabel || trimmedId,
+            autoConnectToken: autoToken,
+            status: "idle",
+            error: null,
+            disposeOnUnmount: true,
+            mode: "attach",
+          },
+        ]);
+        setActiveSessionKey(key);
+      } catch (error) {
+        console.error("Failed to merge detached session", error);
+      }
+    },
+    [generateAutoToken, generateSessionKey]
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -429,28 +623,28 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     let active = true;
     telnetBridge
       .ready()
-      .then((requests) => {
-        if (!active || !requests) {
+      .then((actions) => {
+        if (!active || !actions) {
           return;
         }
-        requests.forEach((request) => handleTelnetLaunch(request));
+        actions.forEach((action) => handleTelnetAction(action));
       })
       .catch((error) => {
         console.error("Failed to initialize telnet bridge", error);
       });
 
-    const unsubscribe = telnetBridge.onRequests?.((requests) => {
+    const unsubscribe = telnetBridge.onRequests?.((actions) => {
       if (!active) {
         return;
       }
-      requests.forEach((request) => handleTelnetLaunch(request));
+      actions.forEach((action) => handleTelnetAction(action));
     });
 
     return () => {
       active = false;
       unsubscribe?.();
     };
-  }, [handleTelnetLaunch]);
+  }, [handleTelnetAction]);
 
   return (
     <div
@@ -596,6 +790,8 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
                 onSelect={handleSelectSession}
                 onClose={handleCloseSession}
                 onDetach={handleDetachSession}
+                onReorder={handleTabReorder}
+                onMergeDetachedSession={handleMergeDetachedSession}
               />
 
               {sessions.length > 0 && (
@@ -622,6 +818,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
                           sessionId={session.sessionId}
                           isVisible={isActive}
                           disposeOnUnmount={session.disposeOnUnmount}
+                          mode={session.mode}
                           className="flex-1"
                         />
                       </div>

@@ -214,6 +214,8 @@ type TelnetLaunchRequest = {
   label?: string;
 };
 
+const DEFAULT_TELNET_PORT = 23;
+
 type TelnetActivateAction = {
   type: "activate";
   sessionId: string;
@@ -376,6 +378,19 @@ function updateSessionLabel(id: string, session: TerminalSession, candidate?: st
     host: session.host,
     port: session.port,
   });
+
+  const attachedWindow = sessionWindowMap.get(id);
+  if (attachedWindow && !attachedWindow.isDestroyed()) {
+    const titleLabel = nextLabel;
+    const fallbackTitle = session.host
+      ? `Telnet ${session.host}${session.port ? `:${session.port}` : ""}`
+      : "Telnet Session";
+    try {
+      attachedWindow.setTitle(titleLabel || fallbackTitle);
+    } catch (error) {
+      console.warn("Failed to update window title for session", id, error);
+    }
+  }
 }
 
 function enqueueTelnetAction(action: TelnetAction) {
@@ -407,7 +422,8 @@ function dispatchTelnetActions() {
 
 function handleIncomingTelnetRequest(request: TelnetLaunchRequest) {
   const normalizedLabel = normalizeLabel(request.label ?? null);
-  const key = makeSessionKey(request.host, request.port);
+  const normalizedPort = normalizePort(request.port) ?? DEFAULT_TELNET_PORT;
+  const key = makeSessionKey(request.host, normalizedPort);
 
   if (key) {
     const existingId = sessionKeyIndex.get(key);
@@ -445,7 +461,7 @@ function handleIncomingTelnetRequest(request: TelnetLaunchRequest) {
 
   enqueueTelnetOpen({
     host: request.host,
-    port: request.port,
+    port: normalizedPort,
     label: normalizedLabel ?? undefined,
   });
 
@@ -1093,6 +1109,34 @@ ipcMain.handle("window:open-session", (_event, payload: { sessionId?: string; ti
     console.error("Failed to open detached session window", sessionId, error);
     return false;
   }
+});
+
+ipcMain.handle("window:reattach-session", (_event, payload: { sessionId?: string } = {}) => {
+  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
+  if (!sessionId) {
+    return null;
+  }
+  const session = terminalSessions.get(sessionId);
+  if (!session) {
+    return null;
+  }
+
+  const detachedWindow = sessionWindowMap.get(sessionId);
+  if (detachedWindow && !detachedWindow.isDestroyed()) {
+    try {
+      reattachPendingWindows.set(sessionId, detachedWindow);
+      detachedWindow.close();
+    } catch (error) {
+      console.warn("Failed to close detached session window during reattach", sessionId, error);
+    }
+  }
+
+  return {
+    id: sessionId,
+    host: session.host,
+    port: session.port,
+    label: session.label,
+  } satisfies { id: string; host?: string; port?: number; label?: string };
 });
 
 ipcMain.on("window:minimize", (event) => {
