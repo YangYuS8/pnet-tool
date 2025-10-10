@@ -9,6 +9,83 @@ const PNETLAB_HOST_PATTERN = /^[a-zA-Z0-9.-]+$/;
 const DEFAULT_PNETLAB_PORT = 80;
 const DEFAULT_PNETLAB_TIMEOUT = 4000;
 const APP_ID = "net.yangyus8.pnettool";
+const SUPPORTED_LOCALES = ["zh-CN", "en"] as const;
+type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
+const DEFAULT_LOCALE: SupportedLocale = "zh-CN";
+
+type AppSettings = {
+  preferredLocale: SupportedLocale;
+};
+
+const DEFAULT_SETTINGS: AppSettings = {
+  preferredLocale: DEFAULT_LOCALE,
+};
+
+let cachedSettings: AppSettings | null = null;
+
+function getSettingsPath() {
+  return path.join(app.getPath("userData"), "settings.json");
+}
+
+function normalizeLocaleCandidate(value: unknown): SupportedLocale | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return SUPPORTED_LOCALES.includes(value as SupportedLocale) ? (value as SupportedLocale) : null;
+}
+
+function readSettings(): AppSettings {
+  if (cachedSettings) {
+    return cachedSettings;
+  }
+
+  const fallback: AppSettings = { ...DEFAULT_SETTINGS };
+
+  try {
+    const filePath = getSettingsPath();
+    const stats = fs.statSync(filePath, { throwIfNoEntry: false });
+    if (!stats?.isFile()) {
+      cachedSettings = fallback;
+      return cachedSettings;
+    }
+    const raw = fs.readFileSync(filePath, "utf-8");
+  const parsed = JSON.parse(raw) as Partial<AppSettings>;
+  const preferredLocale = normalizeLocaleCandidate(parsed.preferredLocale) ?? fallback.preferredLocale;
+  cachedSettings = { preferredLocale };
+  return cachedSettings;
+  } catch (error) {
+    console.warn("Failed to read settings file", error);
+    cachedSettings = fallback;
+    return cachedSettings;
+  }
+}
+
+function writeSettings(update: Partial<AppSettings>) {
+  const current = readSettings();
+  const next: AppSettings = {
+    preferredLocale: normalizeLocaleCandidate(update.preferredLocale) ?? current.preferredLocale,
+  };
+
+  try {
+    const settingsPath = getSettingsPath();
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2), "utf-8");
+    cachedSettings = next;
+  } catch (error) {
+    console.error("Failed to persist settings", error);
+    cachedSettings = next;
+  }
+
+  return cachedSettings;
+}
+
+function getPreferredLocale(): SupportedLocale {
+  return readSettings().preferredLocale ?? DEFAULT_SETTINGS.preferredLocale;
+}
+
+function updatePreferredLocale(locale: SupportedLocale) {
+  return writeSettings({ preferredLocale: locale });
+}
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
 const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
@@ -119,6 +196,22 @@ function resolveTelnetProtocolTarget() {
 }
 
 let mainWindow: BrowserWindow | null = null;
+
+function createDevStartUrl(locale: SupportedLocale) {
+  try {
+    const url = new URL(DEV_SERVER_URL);
+    url.pathname = `/${locale}`;
+    return url.toString();
+  } catch (error) {
+    console.warn("Failed to construct dev renderer URL from", DEV_SERVER_URL, error);
+    const trimmed = DEV_SERVER_URL.endsWith("/") ? DEV_SERVER_URL.slice(0, -1) : DEV_SERVER_URL;
+    return `${trimmed}/${locale}`;
+  }
+}
+
+function createProdStartUrl(locale: SupportedLocale) {
+  return `app://-/${locale}/index.html`;
+}
 
 type WindowStatePayload = {
   isMaximized: boolean;
@@ -610,14 +703,16 @@ function createMainWindow() {
   });
 
   let loadPromise: Promise<void> | undefined;
+  const preferredLocale = getPreferredLocale();
+  const startUrl = isDev ? createDevStartUrl(preferredLocale) : createProdStartUrl(preferredLocale);
 
   if (isDev) {
     loadPromise = mainWindow
-      .loadURL(DEV_SERVER_URL)
+      .loadURL(startUrl)
       .catch((error) => console.error("Failed to load renderer:", error));
   } else {
     loadPromise = mainWindow
-      .loadURL("app://-/index.html")
+      .loadURL(startUrl)
       .catch((error) => console.error("Failed to load renderer:", error));
   }
 
@@ -947,6 +1042,42 @@ ipcMain.on("terminal:input-signal", (_event, payload: { id: string; signal: stri
 
 ipcMain.handle("app:get-version", () => app.getVersion());
 ipcMain.handle("app:ping", () => "pong");
+ipcMain.handle("app:restart", () => {
+  app.relaunch();
+  app.exit(0);
+  return true;
+});
+
+ipcMain.handle("settings:get", () => readSettings());
+
+ipcMain.handle(
+  "settings:set-preferred-locale",
+  (_event, payload: { locale?: string } | string) => {
+    const candidate = typeof payload === "string" ? payload : payload?.locale;
+    const normalized = normalizeLocaleCandidate(candidate);
+    if (!normalized) {
+      return { ok: false, error: "unsupported-locale" } as const;
+    }
+
+    const current = readSettings();
+    if (current.preferredLocale === normalized) {
+      return {
+        ok: true,
+        updated: false,
+        requiresRestart: false,
+        locale: current.preferredLocale,
+      } as const;
+    }
+
+    const next = updatePreferredLocale(normalized);
+    return {
+      ok: true,
+      updated: true,
+      requiresRestart: true,
+      locale: next.preferredLocale,
+    } as const;
+  }
+);
 
 ipcMain.handle("window:get-state", (event) => {
   const target = BrowserWindow.fromWebContents(event.sender);

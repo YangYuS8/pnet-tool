@@ -6,11 +6,14 @@ export async function getDictionary<K extends DictionaryKey>(
   namespace: K
 ): Promise<Dictionaries[K]> {
   switch (namespace) {
-    case "home":
-      if (locale === "en") {
-        return (await import("@/locales/en")).home;
-      }
-      return (await import("@/locales/zh-CN")).home;
+    case "home": {
+      const dictionaryModule = locale === "en" ? await import("@/locales/en") : await import("@/locales/zh-CN");
+      return dictionaryModule.home as Dictionaries[K];
+    }
+    case "settings": {
+      const dictionaryModule = locale === "en" ? await import("@/locales/en") : await import("@/locales/zh-CN");
+      return dictionaryModule.settings as Dictionaries[K];
+    }
     default:
       throw new Error(`Unknown dictionary namespace: ${namespace as string}`);
   }

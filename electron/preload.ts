@@ -91,11 +91,24 @@ type PnetlabHealthResponse = {
   message?: string;
 };
 
+type AppSettings = {
+  preferredLocale: string;
+};
+
+type SettingsUpdateResult = {
+  ok: boolean;
+  updated: boolean;
+  requiresRestart: boolean;
+  locale?: string;
+  error?: string;
+};
+
 declare global {
   interface Window {
     desktopBridge: {
       getVersion: () => Promise<string>;
       ping: () => Promise<string>;
+      restart: () => Promise<boolean>;
       terminal: {
         createTelnetSession: (options: TerminalCreateOptions) => Promise<TerminalCreateResult>;
         write: (id: string, data: string) => void;
@@ -124,6 +137,10 @@ declare global {
       pnetlab?: {
         checkHealth: (payload: PnetlabHealthRequest) => Promise<PnetlabHealthResponse>;
       };
+      settings?: {
+        get: () => Promise<AppSettings>;
+        setPreferredLocale: (locale: string) => Promise<SettingsUpdateResult>;
+      };
     };
   }
 }
@@ -131,6 +148,7 @@ declare global {
 contextBridge.exposeInMainWorld("desktopBridge", {
   getVersion: () => ipcRenderer.invoke("app:get-version"),
   ping: () => ipcRenderer.invoke("app:ping"),
+  restart: () => ipcRenderer.invoke("app:restart") as Promise<boolean>,
   terminal: {
     createTelnetSession: (options: TerminalCreateOptions) =>
       ipcRenderer.invoke("terminal:create", options) as Promise<TerminalCreateResult>,
@@ -221,5 +239,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   pnetlab: {
     checkHealth: (payload: PnetlabHealthRequest) =>
       ipcRenderer.invoke("pnetlab:health-check", payload) as Promise<PnetlabHealthResponse>,
+  },
+  settings: {
+    get: () => ipcRenderer.invoke("settings:get") as Promise<AppSettings>,
+    setPreferredLocale: (locale: string) =>
+      ipcRenderer.invoke("settings:set-preferred-locale", { locale }) as Promise<SettingsUpdateResult>,
   },
 });

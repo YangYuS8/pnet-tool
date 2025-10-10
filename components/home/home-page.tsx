@@ -1,18 +1,9 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Activity,
-  Gauge,
-  Loader2,
-  RadioTower,
-  ShieldQuestion,
-  TerminalSquare,
-  WifiOff,
-} from "lucide-react";
+import Link from "next/link";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Info, RadioTower, Settings2, TerminalSquare } from "lucide-react";
 
-import { LocaleSwitcher } from "@/components/locale-switcher";
-import { ThemeToggle } from "@/components/theme-toggle";
 import {
   TelnetTerminal,
   type TerminalStatus,
@@ -24,84 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { Locale } from "@/lib/i18n/config";
-import type {
-  ConnectionState,
-  HomeDictionary,
-} from "@/lib/i18n/dictionaries";
+import type { HomeDictionary } from "@/lib/i18n/dictionaries";
 import { cn } from "@/lib/utils";
 
-export type ConnectionStatus = {
-  state: ConnectionState;
-  latencyMs?: number;
-  message?: string;
-  httpStatus?: number;
-};
-
-const stateChipTone: Record<ConnectionState, string> = {
-  idle: "bg-muted text-muted-foreground",
-  checking: "bg-amber-500/10 text-amber-500",
-  online: "bg-green-500/10 text-green-500",
-  offline: "bg-red-500/10 text-red-500",
-};
-
-async function requestHealth(ip: string, port: number): Promise<ConnectionStatus> {
-  if (typeof window !== "undefined") {
-    const desktopBridge = window.desktopBridge;
-    const checkHealth = desktopBridge?.pnetlab?.checkHealth;
-
-    if (typeof checkHealth === "function") {
-      const result = await checkHealth({ ip, port });
-
-      if (!result.ok) {
-        return {
-          state: "offline",
-          message: result.message,
-          httpStatus: result.status,
-        };
-      }
-
-      return {
-        state: "online",
-        latencyMs: result.latencyMs,
-        httpStatus: result.status,
-        message: result.statusText,
-      };
-    }
-  }
-
-  const response = await fetch("/api/pnetlab/health", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ ip, port }),
-  });
-
-  const payload = (await response.json()) as {
-    ok: boolean;
-    latencyMs?: number;
-    status?: number;
-    statusText?: string;
-    message?: string;
-  };
-
-  if (!response.ok || !payload.ok) {
-    return {
-      state: "offline",
-      message: payload.message ?? payload.statusText,
-      httpStatus: payload.status ?? response.status,
-    };
-  }
-
-  return {
-    state: "online",
-    latencyMs: payload.latencyMs,
-    httpStatus: payload.status ?? response.status,
-    message: payload.statusText,
-  };
-}
-
-const DEFAULT_HTTP_PORT = 80;
 const DEFAULT_TELNET_PORT = 23;
 
 type TelnetLaunchRequest = {
@@ -143,12 +59,11 @@ export type HomePageProps = {
 
 export function HomePage({ dictionary, locale }: HomePageProps) {
   const [ip, setIp] = useState("");
-  const [port, setPort] = useState(DEFAULT_HTTP_PORT);
-  const [status, setStatus] = useState<ConnectionStatus>({ state: "idle" });
-  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [port, setPort] = useState(DEFAULT_TELNET_PORT);
   const [sessions, setSessions] = useState<ManagedSession[]>([]);
   const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const sessionsRef = useRef<ManagedSession[]>([]);
   const activeKeyRef = useRef<string | null>(null);
   const sessionCounterRef = useRef(0);
@@ -169,7 +84,6 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     (hostValue: string, portValue?: number, labelValue?: string | null) => {
       const trimmedHost = hostValue.trim();
       if (!trimmedHost) {
-        setStatus({ state: "offline", message: dictionary.errors.missingIp });
         return null;
       }
 
@@ -197,29 +111,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
       setActiveSessionKey(key);
       return key;
     },
-    [dictionary.errors.missingIp, generateAutoToken, generateSessionKey]
-  );
-
-  const chipCopy = useMemo(
-    () => ({
-      idle: {
-        label: dictionary.sidebar.statusChip.idle,
-        tone: stateChipTone.idle,
-      },
-      checking: {
-        label: dictionary.sidebar.statusChip.checking,
-        tone: stateChipTone.checking,
-      },
-      online: {
-        label: dictionary.sidebar.statusChip.online,
-        tone: stateChipTone.online,
-      },
-      offline: {
-        label: dictionary.sidebar.statusChip.offline,
-        tone: stateChipTone.offline,
-      },
-    }),
-    [dictionary.sidebar.statusChip]
+    [generateAutoToken, generateSessionKey]
   );
 
   useEffect(() => {
@@ -272,54 +164,31 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
     activeKeyRef.current = activeSessionKey;
   }, [activeSessionKey]);
 
-  const handleCheck = async () => {
-    if (!ip) {
-      setStatus({ state: "offline", message: dictionary.errors.missingIp });
-      return;
-    }
-
-    setStatus({ state: "checking" });
-    try {
-      const nextStatus = await requestHealth(ip, port);
-      setStatus(nextStatus);
-      setLastCheckedAt(Date.now());
-    } catch (error) {
-      setStatus({
-        state: "offline",
-        message:
-          error instanceof Error ? error.message : dictionary.errors.unknown,
-      });
-    }
-  };
-
-  const statusDescription = useMemo(() => {
-    switch (status.state) {
-      case "online":
-        return status.latencyMs
-          ? dictionary.sidebar.statusOverview.onlineWithLatency.replace(
-              "{latency}",
-              String(status.latencyMs)
-            )
-          : dictionary.sidebar.statusOverview.online;
-      case "checking":
-        return dictionary.sidebar.statusOverview.checking;
-      case "offline":
-        return (
-          status.message ?? dictionary.sidebar.statusOverview.offline
-        );
-      default:
-        return dictionary.sidebar.statusOverview.idle;
-    }
-  }, [dictionary, status]);
-
-  const statusMessage = status.message ?? dictionary.statusFallback.offline;
-
   const activeSession = useMemo(
     () => sessions.find((session) => session.key === activeSessionKey) ?? null,
     [activeSessionKey, sessions]
   );
 
-  const terminalErrorMessage = activeSession?.error ?? (status.state === "offline" ? statusMessage : null);
+  const terminalErrorMessage = activeSession?.error ?? null;
+
+  const handleQuickConnect = useCallback(
+    (event?: FormEvent<HTMLFormElement>) => {
+      event?.preventDefault();
+      const trimmedHost = ip.trim();
+      if (!trimmedHost) {
+        setFormError(dictionary.errors.missingHost);
+        return;
+      }
+      const key = createSessionEntry(trimmedHost, port, trimmedHost);
+      if (!key) {
+        setFormError(dictionary.errors.missingHost);
+        return;
+      }
+      setFormError(null);
+      setIp(trimmedHost);
+    },
+    [createSessionEntry, dictionary.errors.missingHost, ip, port]
+  );
 
   const handleSessionStatusChange = useCallback(
     (key: string) => (payload: TerminalStatusChange) => {
@@ -531,24 +400,19 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
 
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
           <section className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div>
               <p className="text-sm font-medium text-muted-foreground">
-                {dictionary.sidebar.controllerLabel}
+                {dictionary.sidebar.quickConnectTitle}
               </p>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-medium ${chipCopy[status.state].tone}`}
-              >
-                {chipCopy[status.state].label}
-              </span>
             </div>
-            <div className="grid gap-4">
+            <form className="grid gap-4" onSubmit={handleQuickConnect}>
               <div className="grid gap-2">
                 <Label htmlFor="pnet-ip">{dictionary.sidebar.ipLabel}</Label>
                 <Input
                   id="pnet-ip"
                   placeholder={dictionary.sidebar.ipPlaceholder}
                   value={ip}
-                  onChange={(event) => setIp(event.target.value.trim())}
+                  onChange={(event) => setIp(event.target.value)}
                 />
               </div>
               <div className="grid gap-2">
@@ -561,49 +425,33 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
                   max={65535}
                   value={port}
                   onChange={(event) =>
-                    setPort(Number(event.target.value) || DEFAULT_HTTP_PORT)
+                    setPort(Number(event.target.value) || DEFAULT_TELNET_PORT)
                   }
                 />
               </div>
-              <Button onClick={handleCheck} disabled={status.state === "checking"}>
-                {status.state === "checking" ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {dictionary.sidebar.checkingButton}
-                  </>
-                ) : (
-                  <>
-                    <Activity className="mr-2 h-4 w-4" />
-                    {dictionary.sidebar.checkButton}
-                  </>
-                )}
-              </Button>
-            </div>
+              <Button type="submit">{dictionary.sidebar.connectButton}</Button>
+            </form>
+            {formError ? (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                <Info className="mt-0.5 h-4 w-4" />
+                <span>{formError}</span>
+              </div>
+            ) : null}
           </section>
           <Separator className="bg-border/60" />
 
           <section className="space-y-3 rounded-xl border border-border/60 bg-background/70 p-4">
-            <div className="flex items-center gap-3">
-              {status.state === "online" ? (
-                <Gauge className="h-5 w-5 text-green-500" />
-              ) : status.state === "offline" ? (
-                <WifiOff className="h-5 w-5 text-red-500" />
-              ) : (
-                <ShieldQuestion className="h-5 w-5 text-muted-foreground" />
-              )}
-              <div>
-                <p className="text-sm font-semibold">
-                  {dictionary.sidebar.statusOverviewTitle}
-                </p>
-                <p className="text-xs text-muted-foreground">{statusDescription}</p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground/80">
-              {dictionary.sidebar.lastCheckPrefix}
-              {lastCheckedAt
-                ? new Date(lastCheckedAt).toLocaleTimeString(locale)
-                : dictionary.sidebar.lastCheckNever}
+            <p className="text-sm font-semibold text-foreground/80">
+              {dictionary.sidebar.tipsTitle}
             </p>
+            <ul className="space-y-2 text-xs text-muted-foreground">
+              {dictionary.sidebar.tips.map((tip) => (
+                <li key={tip} className="flex gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/50" aria-hidden />
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
           </section>
         </div>
       </aside>
@@ -624,17 +472,12 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Suspense
-              fallback={
-                <div
-                  className="h-10 w-24 animate-pulse rounded-md border border-dashed border-border/60 bg-muted/40"
-                  aria-hidden
-                />
-              }
-            >
-              <LocaleSwitcher copy={dictionary.navigation.languageSwitch} />
-            </Suspense>
-            <ThemeToggle />
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/${locale}/settings`}>
+                <Settings2 className="h-4 w-4" />
+                {dictionary.navigation.settingsLabel}
+              </Link>
+            </Button>
           </div>
         </header>
 

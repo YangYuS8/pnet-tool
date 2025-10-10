@@ -1,55 +1,25 @@
 import type { Locale } from "./config";
 
-export type ConnectionState = "idle" | "checking" | "online" | "offline";
-
 export type HomeDictionary = {
   navigation: {
     brand: string;
     sessionTitle: string;
     sessionSubtitle: string;
-    initButton: string;
-    languageSwitch: {
-      ariaLabel: string;
-      targetLocaleName: string;
-      shortLabel: string;
-    };
+    settingsLabel: string;
   };
   sidebar: {
     title: string;
     description: string;
-    controllerLabel: string;
-    statusChip: Record<ConnectionState, string>;
+    quickConnectTitle: string;
     ipLabel: string;
     ipPlaceholder: string;
     portLabel: string;
-    checkButton: string;
-    checkingButton: string;
-    statusOverviewTitle: string;
-    statusOverview: {
-      idle: string;
-      checking: string;
-      offline: string;
-      online: string;
-      onlineWithLatency: string;
-    };
-    futurePlanHint: string;
-    futurePlans: string[];
-    lastCheckPrefix: string;
-    lastCheckNever: string;
-  };
-  main: {
-    cardTitle: string;
-    cardDescription: string;
-    waitingButton: string;
-    placeholderTitle: string;
-    placeholderDescription: string;
+    connectButton: string;
+    tipsTitle: string;
+    tips: string[];
   };
   errors: {
-    missingIp: string;
-    unknown: string;
-  };
-  statusFallback: {
-    offline: string;
+    missingHost: string;
   };
   terminal: {
     openButton: string;
@@ -78,8 +48,41 @@ export type HomeDictionary = {
   };
 };
 
+export type SettingsDictionary = {
+  title: string;
+  description: string;
+  navigation: {
+    backToHome: string;
+  };
+  appearanceSection: {
+    title: string;
+    description: string;
+    toggleLabel: string;
+    options: {
+      light: string;
+      dark: string;
+    };
+  };
+  languageSection: {
+    title: string;
+    description: string;
+    options: Array<{
+      value: Locale;
+      label: string;
+      description?: string;
+    }>;
+    restartNotice: string;
+    saveHint: string;
+  };
+  restart: {
+    button: string;
+    pending: string;
+  };
+};
+
 export type Dictionaries = {
   home: HomeDictionary;
+  settings: SettingsDictionary;
 };
 
 export type DictionaryKey = keyof Dictionaries;
@@ -88,6 +91,7 @@ export type Dictionary = Dictionaries;
 
 export type LoadedDictionaries = {
   home: HomeDictionary;
+  settings: SettingsDictionary;
 };
 
 export type LoadedDictionary = LoadedDictionaries;

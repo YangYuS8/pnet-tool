@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Terminal as XtermTerminal } from "@xterm/xterm";
+import type { ITheme, Terminal as XtermTerminal } from "@xterm/xterm";
 import type { FitAddon as FitAddonClass } from "@xterm/addon-fit";
+import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -68,6 +69,61 @@ export function TelnetTerminal({
   const [error, setError] = useState<string | null>(null);
   const [isDesktopAvailable, setDesktopAvailable] = useState(false);
   const [isDisposing, setIsDisposing] = useState(false);
+  const { resolvedTheme } = useTheme();
+
+  const lightTheme = useMemo<ITheme>(
+    () => ({
+      background: "#f9fafb",
+      foreground: "#111827",
+      cursor: "#2563eb",
+      selection: "rgba(37, 99, 235, 0.25)",
+      black: "#1f2937",
+      red: "#dc2626",
+      green: "#16a34a",
+      yellow: "#ca8a04",
+      blue: "#2563eb",
+      magenta: "#7c3aed",
+      cyan: "#0891b2",
+      white: "#f3f4f6",
+      brightBlack: "#4b5563",
+      brightRed: "#ef4444",
+      brightGreen: "#22c55e",
+      brightYellow: "#eab308",
+      brightBlue: "#3b82f6",
+      brightMagenta: "#8b5cf6",
+      brightCyan: "#06b6d4",
+      brightWhite: "#ffffff",
+    }),
+    []
+  );
+
+  const darkTheme = useMemo<ITheme>(
+    () => ({
+      background: "#0f1115",
+      foreground: "#f7fafc",
+      cursor: "#38bdf8",
+      selection: "rgba(56, 189, 248, 0.35)",
+      black: "#111827",
+      red: "#f87171",
+      green: "#34d399",
+      yellow: "#facc15",
+      blue: "#60a5fa",
+      magenta: "#c084fc",
+      cyan: "#5eead4",
+      white: "#e5e7eb",
+      brightBlack: "#1f2937",
+      brightRed: "#f97316",
+      brightGreen: "#4ade80",
+      brightYellow: "#fde047",
+      brightBlue: "#93c5fd",
+      brightMagenta: "#e879f9",
+      brightCyan: "#67e8f9",
+      brightWhite: "#ffffff",
+    }),
+    []
+  );
+
+  const activeTheme = useMemo(() => (resolvedTheme === "dark" ? darkTheme : lightTheme), [darkTheme, lightTheme, resolvedTheme]);
 
   useEffect(() => {
     setDesktopAvailable(typeof window !== "undefined" && Boolean(window.desktopBridge?.terminal));
@@ -203,11 +259,7 @@ export function TelnetTerminal({
       cursorBlink: true,
       cursorStyle: "block",
       scrollback: 1000,
-      theme: {
-        background: getComputedStyle(document.documentElement).getPropertyValue("--card")?.trim() || "#111827",
-        foreground: getComputedStyle(document.documentElement).getPropertyValue("--foreground")?.trim() || "#f9fafb",
-        cursor: getComputedStyle(document.documentElement).getPropertyValue("--primary")?.trim() || "#38bdf8",
-      },
+      theme: activeTheme,
     });
 
     const fitAddon = new FitAddon();
@@ -310,7 +362,7 @@ export function TelnetTerminal({
       setStatus("error");
       await cleanupSession(true);
     }
-  }, [cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, label, mode, onSessionCreated, port, sessionId, subscribeSessionStreams]);
+  }, [activeTheme, cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, label, mode, onSessionCreated, port, sessionId, subscribeSessionStreams]);
 
   useEffect(() => {
     if (mode === "attach" && sessionId && status === "idle") {
@@ -349,6 +401,14 @@ export function TelnetTerminal({
       void cleanupSession(disposeOnUnmountRef.current);
     };
   }, [cleanupSession]);
+
+  useEffect(() => {
+    if (!terminalRef.current) {
+      return;
+    }
+    terminalRef.current.options.theme = activeTheme;
+    terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+  }, [activeTheme]);
 
   useEffect(() => {
     if (isVisible && !previousVisibilityRef.current) {

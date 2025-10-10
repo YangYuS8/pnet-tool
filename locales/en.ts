@@ -4,66 +4,33 @@ export const home: Dictionaries["home"] = {
   navigation: {
     brand: "PNET TOOL",
     sessionTitle: "Device Sessions",
-    sessionSubtitle: "Coming soon: auto-launch Telnet windows for routers",
-    initButton: "Bootstrap Daemon",
-    languageSwitch: {
-      ariaLabel: "Switch language",
-      targetLocaleName: "中文",
-      shortLabel: "中文",
-    },
+    sessionSubtitle: "Sessions are ready whenever PNETLab opens a telnet link.",
+    settingsLabel: "Open settings",
   },
   sidebar: {
-    title: "Connection Workbench",
-    description: "Manage PNETLab parameters, monitor connectivity, and prepare Telnet sessions.",
-    controllerLabel: "PNETLab Controller",
-    statusChip: {
-      idle: "Not Checked",
-      checking: "Checking",
-      online: "Online",
-      offline: "Offline",
-    },
-    ipLabel: "PNETLab IP Address",
+    title: "Session Workspace",
+    description: "Launch manual Telnet sessions or wait for PNETLab to deliver devices here.",
+    quickConnectTitle: "Quick connect",
+    ipLabel: "Target host",
     ipPlaceholder: "e.g. 192.168.1.10",
-    portLabel: "Management Port (HTTP)",
-    checkButton: "Check Connectivity",
-    checkingButton: "Checking…",
-    statusOverviewTitle: "Status Overview",
-    statusOverview: {
-      idle: "Click the button below to start a health check",
-      checking: "Detecting connectivity…",
-      offline: "PNETLab is unreachable right now",
-      online: "PNETLab responded successfully",
-      onlineWithLatency: "Response time {latency} ms",
-    },
-    futurePlanHint: "Upcoming work:",
-    futurePlans: [
-      "Trigger Telnet windows from PNETLab events automatically",
-      "Manage multiple sessions with quick switching",
-      "High-performance terminal rendering (node-pty + xterm.js)",
+    portLabel: "Telnet port",
+    connectButton: "Start session",
+    tipsTitle: "Tips",
+    tips: [
+      "You can also trigger sessions directly from PNETLab via telnet:// links.",
+      "Sessions keep running until you close them from the list.",
+      "Drag items in the list to reorder active sessions.",
     ],
-    lastCheckPrefix: "Last check: ",
-    lastCheckNever: "Not checked yet",
-  },
-  main: {
-    cardTitle: "Terminal Control Center",
-    cardDescription: "Live device consoles will land here soon with a SecureFX-like experience.",
-    waitingButton: "Awaiting Device Events",
-    placeholderTitle: "Terminal staging area",
-    placeholderDescription: "When you click a router inside PNETLab, its Telnet window will open here automatically.",
   },
   errors: {
-    missingIp: "Please enter the PNETLab IP first",
-    unknown: "An unexpected error occurred during the check",
-  },
-  statusFallback: {
-    offline: "PNETLab is temporarily unavailable",
+    missingHost: "Please enter a host before starting a session.",
   },
   terminal: {
     openButton: "Open Telnet Session",
     connectingButton: "Connecting…",
     closeButton: "Close Session",
     desktopOnlyHint: "Terminal access is only available in the desktop app.",
-    requireIp: "Please fill in the PNETLab IP above to start Telnet.",
+    requireIp: "Please provide the host information before starting Telnet.",
     testButton: "Run Session Test",
     autoLaunchOn: "Auto-connect on health pass",
     autoLaunchOff: "Enable auto-connect",
@@ -83,5 +50,36 @@ export const home: Dictionaries["home"] = {
         "Launch a session from the sidebar or via PNETLab to see it listed here.",
       reorderHint: "Drag items to reorder your session list.",
     },
+  },
+};
+
+export const settings: Dictionaries["settings"] = {
+  title: "Application settings",
+  description: "Fine-tune how PNET Tool looks and which language it uses.",
+  navigation: {
+    backToHome: "Back to sessions",
+  },
+  appearanceSection: {
+    title: "Appearance",
+    description: "Switch between light and dark themes. Changes apply immediately.",
+    toggleLabel: "Theme",
+    options: {
+      light: "Light",
+      dark: "Dark",
+    },
+  },
+  languageSection: {
+    title: "Language",
+    description: "Choose the interface language for the next launch.",
+    options: [
+      { value: "zh-CN", label: "简体中文" },
+      { value: "en", label: "English" },
+    ],
+    restartNotice: "Changing the language requires restarting the application.",
+    saveHint: "Your selection is saved automatically.",
+  },
+  restart: {
+    button: "Restart now",
+    pending: "Restart the app to apply the new language.",
   },
 };
