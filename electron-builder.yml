@@ -31,6 +31,19 @@ linux:
     Name: PNET Tool
     Comment: Dedicated telnet client for PNETLab
     MimeType: x-scheme-handler/telnet;
+win:
+  icon: build/icons/pnet-tool.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: PNET Tool-${version}-setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: PNET Tool
+  uninstallDisplayName: PNET Tool
 protocols:
   - name: Telnet Protocol
     schemes:

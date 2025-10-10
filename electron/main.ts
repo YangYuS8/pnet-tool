@@ -8,10 +8,15 @@ import { spawn } from "node-pty";
 const PNETLAB_HOST_PATTERN = /^[a-zA-Z0-9.-]+$/;
 const DEFAULT_PNETLAB_PORT = 80;
 const DEFAULT_PNETLAB_TIMEOUT = 4000;
+const APP_ID = "net.yangyus8.pnettool";
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
 const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
 const PRELOAD_PATH = path.join(__dirname, "preload.js");
+
+if (process.platform === "win32") {
+  app.setAppUserModelId(APP_ID);
+}
 
 if (!isDev) {
   protocol.registerSchemesAsPrivileged([

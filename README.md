@@ -5,12 +5,12 @@ PNET Tool 是一个结合 Next.js 15 与 Electron 38 的桌面端应用，用于
 当前实现的核心能力：
 
 - Telnet 终端：基于 `node-pty` + `@xterm/xterm` 的高性能管道，支持自动连接 PNETLab 设备并回传状态。
-- 多会话标签：可同时打开多个会话，提供浏览器式标签栏，支持快速切换、关闭与重命名。
-- 窗口分离：任意会话可在独立 Electron 窗口中持续运行，保持守护状态与自动重连逻辑。
+- 会话面板：左侧纵向列表集中展示当前会话，可快速切换、重命名并查看运行状态。
 - 协议唤起：注册 `telnet://` 协议，支持从浏览器点击 PNETLab 拓扑节点后唤起桌面端并自动连接。
 - 配置检测：通过 `/api/pnetlab/health` 探测 PNETLab 连通性并反馈响应时延。
 - 双语界面：支持 `zh-CN` 与 `en` 两种语言，通过 `/[locale]` 路径访问并在客户端即时切换。
 - 桌面壳层：定制化窗口标题栏、主题切换与 IPC 桥接，统一桌面视觉风格。
+- Windows 试验支持：提供 x64 NSIS 安装包与 AppUserModelID 配置，验证 telnet 协议注册链路。
 
 ## 快速开始
 
@@ -39,9 +39,10 @@ pnpm build       # 构建 Electron 桌面版（含静态渲染层）
 pnpm build:web   # 仅构建 Next.js
 pnpm build:electron
 pnpm run dist:appimage  # 产出 Linux AppImage 安装包
+pnpm run dist:win       # 产出 Windows x64 NSIS 安装包
 ```
 
-更多打包细节见 `docs/setup/appimage-build.md`。
+更多打包细节见 `docs/setup/appimage-build.md` 与 `docs/setup/windows-build.md`。
 
 ## 目录指引
 
@@ -53,7 +54,7 @@ pnpm run dist:appimage  # 产出 Linux AppImage 安装包
 ## 下一步路线
 
 - 完成 Arch/Manjaro 的 `PKGBUILD`、post-install 与协议注册脚本，打磨 Linux 发行体验。
-- 编写 AppImage / PKGBUILD 双路径的安装与故障排查指南，补齐图文文档。
+- 编写 AppImage / PKGBUILD / Windows NSIS 的安装与故障排查指南，补齐图文文档。
 - 强化 Telnet 终端的断线检测、日志导出与多会话持久化能力。
 - 评估并引入轻量 CI，自动构建试玩包并回归 `telnet://` 唤起流程。
 
