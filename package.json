@@ -19,7 +19,7 @@
     "dist:appimage": "pnpm run build && pnpm exec electron-builder --linux AppImage --publish never",
     "dist:win": "pnpm run build && pnpm exec electron-builder --win nsis --x64 --publish never",
     "lint": "eslint",
-    "postinstall": "pnpm exec electron-builder install-app-deps"
+    "postinstall": "node -e \"if (process.env.CI !== 'true') { require('child_process').execSync('pnpm exec electron-builder install-app-deps', { stdio: 'inherit' }); }\""
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",
