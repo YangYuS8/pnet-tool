@@ -21,6 +21,9 @@ export const home: Dictionaries["home"] = {
       "Sessions keep running until you close them from the list.",
       "Drag items in the list to reorder active sessions.",
     ],
+    recentTitle: "Recent devices",
+    recentEmpty: "No previous connections yet. Once you connect, entries will appear here for quick access.",
+    recentClearLabel: "Clear history",
   },
   errors: {
     missingHost: "Please enter a host before starting a session.",

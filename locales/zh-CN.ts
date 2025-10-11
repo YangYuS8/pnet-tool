@@ -21,6 +21,9 @@ export const home: Dictionaries["home"] = {
       "会话会一直保留，直到在列表中关闭它。",
       "支持拖动列表项来调整会话顺序。",
     ],
+    recentTitle: "最近连接",
+    recentEmpty: "暂时没有历史记录，发起一次连接后会自动保存在这里。",
+    recentClearLabel: "清除记录",
   },
   errors: {
     missingHost: "请先填写主机地址再启动会话。",

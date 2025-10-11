@@ -8,6 +8,7 @@ import { spawn } from "node-pty";
 const PNETLAB_HOST_PATTERN = /^[a-zA-Z0-9.-]+$/;
 const DEFAULT_PNETLAB_PORT = 80;
 const DEFAULT_PNETLAB_TIMEOUT = 4000;
+const DEFAULT_TELNET_PORT = 23;
 const APP_ID = "net.yangyus8.pnettool";
 const SUPPORTED_LOCALES = ["zh-CN", "en"] as const;
 type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
@@ -36,14 +37,25 @@ const DEFAULT_TERMINAL_PREFERENCES: TerminalPreferences = {
   letterSpacing: 0,
 };
 
+type RecentConnectionRecord = {
+  host: string;
+  port: number;
+  label: string;
+  lastConnectedAt: number;
+};
+
+const RECENT_CONNECTION_LIMIT = 20;
+
 type AppSettings = {
   preferredLocale: SupportedLocale;
   terminal: TerminalPreferences;
+  recentConnections: RecentConnectionRecord[];
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   preferredLocale: DEFAULT_LOCALE,
   terminal: { ...DEFAULT_TERMINAL_PREFERENCES },
+  recentConnections: [],
 };
 
 let cachedSettings: AppSettings | null = null;
@@ -65,6 +77,78 @@ function clampNumber(value: unknown, fallback: number, minimum: number, maximum:
     return fallback;
   }
   return Math.min(Math.max(numeric, minimum), maximum);
+}
+
+function sanitizePortCandidate(value: unknown, fallback: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  const rounded = Math.round(numeric);
+  if (rounded <= 0 || rounded > 65535) {
+    return fallback;
+  }
+  return rounded;
+}
+
+function makeRecentConnectionKey(host: string, port: number) {
+  return `${host.toLowerCase()}::${port}`;
+}
+
+function sanitizeRecentConnectionCandidate(
+  candidate: Partial<RecentConnectionRecord> | null | undefined,
+  fallback?: RecentConnectionRecord
+): RecentConnectionRecord | null {
+  const fallbackHost = typeof fallback?.host === "string" ? fallback.host : "";
+  const rawHost = typeof candidate?.host === "string" ? candidate.host : fallbackHost;
+  const host = rawHost.trim();
+  if (!host) {
+    return null;
+  }
+
+  const fallbackPort = typeof fallback?.port === "number" ? fallback.port : DEFAULT_TELNET_PORT;
+  const port = sanitizePortCandidate(candidate?.port, fallbackPort);
+
+  const rawLabel = typeof candidate?.label === "string" ? candidate.label : fallback?.label ?? host;
+  const label = rawLabel.trim() || host;
+
+  const timestampCandidate = candidate?.lastConnectedAt;
+  const fallbackTimestamp = fallback?.lastConnectedAt ?? Date.now();
+  const lastConnectedAt =
+    typeof timestampCandidate === "number" && Number.isFinite(timestampCandidate)
+      ? timestampCandidate
+      : fallbackTimestamp;
+
+  return {
+    host,
+    port,
+    label,
+    lastConnectedAt,
+  } satisfies RecentConnectionRecord;
+}
+
+function sanitizeRecentConnections(
+  input: Array<Partial<RecentConnectionRecord>> | null | undefined,
+  fallback: RecentConnectionRecord[] = []
+): RecentConnectionRecord[] {
+  const source = Array.isArray(input) ? input : fallback;
+  const result = new Map<string, RecentConnectionRecord>();
+
+  for (const candidate of source) {
+    const sanitized = sanitizeRecentConnectionCandidate(candidate);
+    if (!sanitized) {
+      continue;
+    }
+    const key = makeRecentConnectionKey(sanitized.host, sanitized.port);
+    const existing = result.get(key);
+    if (!existing || existing.lastConnectedAt < sanitized.lastConnectedAt) {
+      result.set(key, sanitized);
+    }
+  }
+
+  const merged = Array.from(result.values());
+  merged.sort((a, b) => b.lastConnectedAt - a.lastConnectedAt);
+  return merged.slice(0, RECENT_CONNECTION_LIMIT);
 }
 
 function sanitizeTerminalPreferences(
@@ -94,6 +178,7 @@ function readSettings(): AppSettings {
   const fallback: AppSettings = {
     preferredLocale: DEFAULT_SETTINGS.preferredLocale,
     terminal: { ...DEFAULT_TERMINAL_PREFERENCES },
+    recentConnections: [],
   };
 
   try {
@@ -107,9 +192,14 @@ function readSettings(): AppSettings {
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const preferredLocale = normalizeLocaleCandidate(parsed.preferredLocale) ?? fallback.preferredLocale;
     const terminal = sanitizeTerminalPreferences((parsed as Partial<AppSettings> & { terminal?: Partial<TerminalPreferences> }).terminal, fallback.terminal);
+    const recentConnections = sanitizeRecentConnections(
+      (parsed as Partial<AppSettings> & { recentConnections?: Array<Partial<RecentConnectionRecord>> }).recentConnections,
+      fallback.recentConnections
+    );
     cachedSettings = {
       preferredLocale,
       terminal,
+      recentConnections,
     } satisfies AppSettings;
     return cachedSettings;
   } catch (error) {
@@ -122,6 +212,7 @@ function readSettings(): AppSettings {
 type SettingsUpdatePayload = {
   preferredLocale?: SupportedLocale;
   terminal?: Partial<TerminalPreferences>;
+  recentConnections?: Array<Partial<RecentConnectionRecord>>;
 };
 
 function writeSettings(update: SettingsUpdatePayload) {
@@ -129,6 +220,7 @@ function writeSettings(update: SettingsUpdatePayload) {
   const next: AppSettings = {
     preferredLocale: normalizeLocaleCandidate(update.preferredLocale) ?? current.preferredLocale,
     terminal: sanitizeTerminalPreferences(update.terminal ? { ...current.terminal, ...update.terminal } : current.terminal, current.terminal),
+    recentConnections: sanitizeRecentConnections(update.recentConnections ?? current.recentConnections, current.recentConnections),
   };
 
   try {
@@ -159,6 +251,39 @@ function terminalPreferencesEqual(a: TerminalPreferences, b: TerminalPreferences
     a.lineHeight === b.lineHeight &&
     a.letterSpacing === b.letterSpacing
   );
+}
+
+function appendRecentConnectionRecord(entry: RecentConnectionRecord) {
+  const current = readSettings();
+  const merged = sanitizeRecentConnections([entry, ...current.recentConnections], current.recentConnections);
+  const unchanged =
+    merged.length === current.recentConnections.length &&
+    merged.every((item, index) => {
+      const existing = current.recentConnections[index];
+      return (
+        existing &&
+        existing.host === item.host &&
+        existing.port === item.port &&
+        existing.label === item.label &&
+        existing.lastConnectedAt === item.lastConnectedAt
+      );
+    });
+
+  if (unchanged) {
+    return { settings: current, updated: false } as const;
+  }
+
+  const settings = writeSettings({ recentConnections: merged });
+  return { settings, updated: true } as const;
+}
+
+function clearRecentConnectionsRecord() {
+  const current = readSettings();
+  if (current.recentConnections.length === 0) {
+    return { settings: current, updated: false } as const;
+  }
+  const settings = writeSettings({ recentConnections: [] });
+  return { settings, updated: true } as const;
 }
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
@@ -364,8 +489,6 @@ type TelnetLaunchRequest = {
   port?: number;
   label?: string;
 };
-
-const DEFAULT_TELNET_PORT = 23;
 
 type TelnetActivateAction = {
   type: "activate";
@@ -1150,6 +1273,41 @@ ipcMain.handle("settings:set-terminal", (_event, payload: Partial<TerminalPrefer
     ok: true,
     updated: true,
     settings: next.terminal,
+  } as const;
+});
+
+ipcMain.handle(
+  "settings:add-recent-connection",
+  (_event, payload: { host?: string; port?: number; label?: string } | null | undefined) => {
+    const rawHost = typeof payload?.host === "string" ? payload.host.trim() : "";
+    if (!rawHost) {
+      return { ok: false, updated: false, error: "invalid-host" } as const;
+    }
+
+  const port = sanitizePortCandidate(payload?.port, DEFAULT_TELNET_PORT);
+    const rawLabel = typeof payload?.label === "string" ? payload.label : undefined;
+    const entry: RecentConnectionRecord = {
+      host: rawHost,
+      port,
+      label: rawLabel?.trim().length ? rawLabel.trim() : rawHost,
+      lastConnectedAt: Date.now(),
+    };
+
+    const result = appendRecentConnectionRecord(entry);
+    return {
+      ok: true,
+      updated: result.updated,
+      connections: result.settings.recentConnections,
+    } as const;
+  }
+);
+
+ipcMain.handle("settings:clear-recent-connections", () => {
+  const result = clearRecentConnectionsRecord();
+  return {
+    ok: true,
+    updated: result.updated,
+    connections: result.settings.recentConnections,
   } as const;
 });
 

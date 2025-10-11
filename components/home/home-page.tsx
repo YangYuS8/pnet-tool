@@ -51,6 +51,103 @@ type ManagedSession = {
   error: string | null;
 };
 
+const RECENT_CONNECTION_LIMIT = 12;
+const LOCAL_RECENTS_STORAGE_KEY = "pnet:recent-connections:v1";
+const SESSION_STORAGE_KEY = "pnet:active-terminal-sessions:v1";
+const SESSION_ACTIVE_STORAGE_KEY = "pnet:active-terminal-session-key:v1";
+
+type RecentConnectionRecord = {
+  host: string;
+  port: number;
+  label: string;
+  lastConnectedAt: number;
+};
+
+type PersistedSessionSnapshot = {
+  key: string;
+  sessionId: string;
+  host: string;
+  port: number;
+  label: string;
+};
+
+function sanitizePortValue(value: unknown, fallback = DEFAULT_TELNET_PORT) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  const rounded = Math.round(numeric);
+  if (rounded <= 0 || rounded > 65535) {
+    return fallback;
+  }
+  return rounded;
+}
+
+function sanitizeRecentConnectionRecord(
+  entry: Partial<RecentConnectionRecord> | null | undefined
+): RecentConnectionRecord | null {
+  if (!entry) {
+    return null;
+  }
+  const host = typeof entry.host === "string" ? entry.host.trim() : "";
+  if (!host) {
+    return null;
+  }
+  const port = sanitizePortValue(entry.port);
+  const rawLabel = typeof entry.label === "string" ? entry.label : host;
+  const label = rawLabel.trim() || host;
+  const timestamp =
+    typeof entry.lastConnectedAt === "number" && Number.isFinite(entry.lastConnectedAt)
+      ? entry.lastConnectedAt
+      : Date.now();
+
+  return {
+    host,
+    port,
+    label,
+    lastConnectedAt: timestamp,
+  } satisfies RecentConnectionRecord;
+}
+
+function mergeRecentConnectionRecords(records: RecentConnectionRecord[]): RecentConnectionRecord[] {
+  const map = new Map<string, RecentConnectionRecord>();
+  for (const record of records) {
+    const key = `${record.host.toLowerCase()}::${record.port}`;
+    const existing = map.get(key);
+    if (!existing || existing.lastConnectedAt < record.lastConnectedAt) {
+      map.set(key, record);
+    }
+  }
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => b.lastConnectedAt - a.lastConnectedAt);
+  return merged.slice(0, RECENT_CONNECTION_LIMIT);
+}
+
+function sanitizePersistedSessionSnapshot(
+  entry: Partial<PersistedSessionSnapshot> | null | undefined
+): PersistedSessionSnapshot | null {
+  if (!entry) {
+    return null;
+  }
+  const key = typeof entry.key === "string" ? entry.key.trim() : "";
+  const sessionId = typeof entry.sessionId === "string" ? entry.sessionId.trim() : "";
+  const host = typeof entry.host === "string" ? entry.host.trim() : "";
+  if (!key || !sessionId || !host) {
+    return null;
+  }
+  const port = sanitizePortValue(entry.port);
+  const rawLabel = typeof entry.label === "string" ? entry.label : host;
+  const label = rawLabel.trim() || host;
+
+  return {
+    key,
+    sessionId,
+    host,
+    port,
+    label,
+  } satisfies PersistedSessionSnapshot;
+}
+
 export function HomePage() {
   const { dictionary } = useLocaleDictionary("home");
   const [ip, setIp] = useState("");
@@ -59,14 +156,38 @@ export function HomePage() {
   const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [recentConnections, setRecentConnections] = useState<RecentConnectionRecord[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+    try {
+      const raw = window.localStorage?.getItem(LOCAL_RECENTS_STORAGE_KEY);
+      if (!raw) {
+        return [];
+      }
+      const parsed = JSON.parse(raw) as Array<Partial<RecentConnectionRecord>>;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      const sanitized = parsed
+        .map(sanitizeRecentConnectionRecord)
+        .filter((entry): entry is RecentConnectionRecord => Boolean(entry));
+      return mergeRecentConnectionRecords(sanitized);
+    } catch (error) {
+      console.warn("Failed to read recent connections from local storage", error);
+      return [];
+    }
+  });
   const sessionsRef = useRef<ManagedSession[]>([]);
   const activeKeyRef = useRef<string | null>(null);
-  const sessionCounterRef = useRef(0);
   const autoConnectTokenRef = useRef(1);
 
   const generateSessionKey = useCallback(() => {
-    sessionCounterRef.current += 1;
-    return `session-${Date.now()}-${sessionCounterRef.current}`;
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `session-${crypto.randomUUID()}`;
+    }
+    const random = Math.random().toString(36).slice(2, 10);
+    return `session-${Date.now()}-${random}`;
   }, []);
 
   const generateAutoToken = useCallback(() => {
@@ -82,10 +203,7 @@ export function HomePage() {
         return null;
       }
 
-      const portNumber =
-        typeof portValue === "number" && Number.isFinite(portValue) && portValue > 0
-          ? portValue
-          : DEFAULT_TELNET_PORT;
+      const portNumber = sanitizePortValue(portValue);
 
       const key = generateSessionKey();
       const autoToken = generateAutoToken();
@@ -115,8 +233,107 @@ export function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      if (recentConnections.length > 0) {
+        window.localStorage.setItem(
+          LOCAL_RECENTS_STORAGE_KEY,
+          JSON.stringify(recentConnections)
+        );
+      } else {
+        window.localStorage.removeItem(LOCAL_RECENTS_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.warn("Failed to persist recent connections locally", error);
+    }
+  }, [recentConnections]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    let active = true;
+
+    const bootstrap = async () => {
+      try {
+        const settings = await window.desktopBridge?.settings?.get();
+        if (!active || !settings?.recentConnections) {
+          return;
+        }
+        const sanitized = settings.recentConnections
+          .map(sanitizeRecentConnectionRecord)
+          .filter((entry): entry is RecentConnectionRecord => Boolean(entry));
+        if (sanitized.length === 0) {
+          return;
+        }
+        setRecentConnections((prev) => {
+          if (prev.length === 0) {
+            return mergeRecentConnectionRecords(sanitized);
+          }
+          return mergeRecentConnectionRecords([...sanitized, ...prev]);
+        });
+      } catch (error) {
+        console.warn("Failed to load recent connections from desktop settings", error);
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Array<Partial<PersistedSessionSnapshot>>;
+      if (!Array.isArray(parsed)) {
+        return;
+      }
+      const snapshots = parsed
+        .map(sanitizePersistedSessionSnapshot)
+        .filter((entry): entry is PersistedSessionSnapshot => Boolean(entry));
+      if (snapshots.length === 0) {
+        return;
+      }
+
+      setSessions((prev) => {
+        if (prev.length > 0) {
+          return prev;
+        }
+        return snapshots.map((snapshot) => ({
+          key: snapshot.key,
+          sessionId: snapshot.sessionId,
+          host: snapshot.host,
+          port: snapshot.port,
+          label: snapshot.label,
+          autoConnectToken: generateAutoToken(),
+          status: "idle",
+          error: null,
+        }));
+      });
+
+      const storedActive = window.sessionStorage.getItem(SESSION_ACTIVE_STORAGE_KEY);
+      if (storedActive && snapshots.some((snapshot) => snapshot.key === storedActive)) {
+        setActiveSessionKey((prev) => prev ?? storedActive);
+      }
+    } catch (error) {
+      console.warn("Failed to restore terminal sessions from storage", error);
+    }
+  }, [generateAutoToken]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -159,6 +376,53 @@ export function HomePage() {
     activeKeyRef.current = activeSessionKey;
   }, [activeSessionKey]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const snapshots = sessions
+        .filter((session) => Boolean(session.sessionId))
+        .map((session) => ({
+          key: session.key,
+          sessionId: session.sessionId as string,
+          host: session.host,
+          port: session.port,
+          label: session.label,
+        }));
+
+      if (snapshots.length > 0) {
+        window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(snapshots));
+      } else {
+        window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+
+      if (activeSessionKey && snapshots.some((snapshot) => snapshot.key === activeSessionKey)) {
+        window.sessionStorage.setItem(SESSION_ACTIVE_STORAGE_KEY, activeSessionKey);
+      } else {
+        window.sessionStorage.removeItem(SESSION_ACTIVE_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.warn("Failed to persist terminal sessions", error);
+    }
+  }, [sessions, activeSessionKey]);
+
+  useEffect(() => {
+    if (sessions.length === 0) {
+      if (activeSessionKey !== null) {
+        setActiveSessionKey(null);
+      }
+      return;
+    }
+    if (activeSessionKey && sessions.some((session) => session.key === activeSessionKey)) {
+      return;
+    }
+    const fallback = sessions[0]?.key ?? null;
+    if (fallback !== activeSessionKey) {
+      setActiveSessionKey(fallback);
+    }
+  }, [sessions, activeSessionKey]);
+
   const activeSession = useMemo(
     () => sessions.find((session) => session.key === activeSessionKey) ?? null,
     [activeSessionKey, sessions]
@@ -185,21 +449,82 @@ export function HomePage() {
     [createSessionEntry, dictionary.errors.missingHost, ip, port]
   );
 
-  const handleSessionStatusChange = useCallback(
-    (key: string) => (payload: TerminalStatusChange) => {
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.key === key
-            ? {
-                ...session,
-                status: payload.status,
-                error: payload.error ?? null,
-              }
-            : session
-        )
-      );
+  const persistRecentConnection = useCallback(
+    async (connection: { host: string; port: number; label: string }) => {
+      const host = connection.host.trim();
+      if (!host) {
+        return;
+      }
+      const port = sanitizePortValue(connection.port);
+      const label = connection.label.trim().length ? connection.label.trim() : host;
+      const entry: RecentConnectionRecord = {
+        host,
+        port,
+        label,
+        lastConnectedAt: Date.now(),
+      };
+
+      setRecentConnections((prev) => mergeRecentConnectionRecords([entry, ...prev]));
+
+      try {
+        await window.desktopBridge?.settings?.addRecentConnection({ host, port, label });
+      } catch (error) {
+        console.warn("Failed to persist recent connection", error);
+      }
     },
     []
+  );
+
+  const handleClearRecentConnections = useCallback(async () => {
+    setRecentConnections([]);
+    try {
+      await window.desktopBridge?.settings?.clearRecentConnections();
+    } catch (error) {
+      console.warn("Failed to clear recent connections", error);
+    }
+  }, []);
+
+  const handleLaunchRecentConnection = useCallback(
+    (connection: RecentConnectionRecord) => {
+      setIp(connection.host);
+      setPort(connection.port);
+      setFormError(null);
+      createSessionEntry(connection.host, connection.port, connection.label);
+    },
+    [createSessionEntry]
+  );
+
+  const handleSessionStatusChange = useCallback(
+    (key: string) => (payload: TerminalStatusChange) => {
+      let connectionToPersist: { host: string; port: number; label: string } | null = null;
+
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.key !== key) {
+            return session;
+          }
+          const wasConnected = session.status === "connected";
+          const nextSession: ManagedSession = {
+            ...session,
+            status: payload.status,
+            error: payload.error ?? null,
+          };
+          if (payload.status === "connected" && !wasConnected && nextSession.sessionId) {
+            connectionToPersist = {
+              host: nextSession.host,
+              port: nextSession.port,
+              label: nextSession.label,
+            };
+          }
+          return nextSession;
+        })
+      );
+
+      if (connectionToPersist) {
+        void persistRecentConnection(connectionToPersist);
+      }
+    },
+    [persistRecentConnection]
   );
 
   const handleSessionCreated = useCallback(
@@ -224,6 +549,7 @@ export function HomePage() {
         return;
       }
       setIp(request.host);
+      setPort(sanitizePortValue(request.port));
       createSessionEntry(request.host, request.port, request.label ?? null);
     },
     [createSessionEntry]
@@ -420,7 +746,7 @@ export function HomePage() {
                   max={65535}
                   value={port}
                   onChange={(event) =>
-                    setPort(Number(event.target.value) || DEFAULT_TELNET_PORT)
+                    setPort(sanitizePortValue(event.target.value))
                   }
                 />
               </div>
@@ -432,6 +758,53 @@ export function HomePage() {
                 <span>{formError}</span>
               </div>
             ) : null}
+            <div className="space-y-3 rounded-xl border border-border/60 bg-background/70 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground/80">
+                  {dictionary.sidebar.recentTitle}
+                </p>
+                {recentConnections.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs text-muted-foreground"
+                    onClick={() => {
+                      void handleClearRecentConnections();
+                    }}
+                  >
+                    {dictionary.sidebar.recentClearLabel}
+                  </Button>
+                ) : null}
+              </div>
+              {recentConnections.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {recentConnections.map((connection) => {
+                    const key = `${connection.host}:${connection.port}`;
+                    const displayHost = connection.port
+                      ? `${connection.host}:${connection.port}`
+                      : connection.host;
+                    return (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="h-9 justify-between px-3 text-left"
+                        onClick={() => handleLaunchRecentConnection(connection)}
+                      >
+                        <span className="truncate font-medium">{connection.label}</span>
+                        <span className="text-[11px] text-muted-foreground">{displayHost}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground/70">
+                  {dictionary.sidebar.recentEmpty}
+                </p>
+              )}
+            </div>
           </section>
           <Separator className="bg-border/60" />
 
@@ -518,7 +891,9 @@ export function HomePage() {
                             onStatusChange={handleSessionStatusChange(session.key)}
                             onSessionCreated={handleSessionCreated(session.key)}
                             sessionId={session.sessionId}
+                            mode={session.sessionId ? "attach" : "create"}
                             isVisible={isActive}
+                            disposeOnUnmount={false}
                             className="flex-1"
                           />
                         </div>

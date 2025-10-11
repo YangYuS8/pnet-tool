@@ -98,9 +98,17 @@ type TerminalPreferences = {
   letterSpacing: number;
 };
 
+type RecentConnection = {
+  host: string;
+  port: number;
+  label: string;
+  lastConnectedAt: number;
+};
+
 type AppSettings = {
   preferredLocale: string;
   terminal: TerminalPreferences;
+  recentConnections: RecentConnection[];
 };
 
 type SettingsUpdateResult = {
@@ -114,6 +122,13 @@ type TerminalSettingsUpdateResult = {
   ok: boolean;
   updated: boolean;
   settings?: TerminalPreferences;
+  error?: string;
+};
+
+type RecentConnectionsUpdateResult = {
+  ok: boolean;
+  updated: boolean;
+  connections: RecentConnection[];
   error?: string;
 };
 
@@ -155,6 +170,8 @@ declare global {
         get: () => Promise<AppSettings>;
         setPreferredLocale: (locale: string) => Promise<SettingsUpdateResult>;
         setTerminalPreferences: (settings: Partial<TerminalPreferences>) => Promise<TerminalSettingsUpdateResult>;
+        addRecentConnection: (connection: { host: string; port?: number; label?: string }) => Promise<RecentConnectionsUpdateResult>;
+        clearRecentConnections: () => Promise<RecentConnectionsUpdateResult>;
       };
     };
   }
@@ -261,5 +278,9 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke("settings:set-preferred-locale", { locale }) as Promise<SettingsUpdateResult>,
     setTerminalPreferences: (settings: Partial<TerminalPreferences>) =>
       ipcRenderer.invoke("settings:set-terminal", settings) as Promise<TerminalSettingsUpdateResult>,
+    addRecentConnection: (connection: { host: string; port?: number; label?: string }) =>
+      ipcRenderer.invoke("settings:add-recent-connection", connection) as Promise<RecentConnectionsUpdateResult>,
+    clearRecentConnections: () =>
+      ipcRenderer.invoke("settings:clear-recent-connections") as Promise<RecentConnectionsUpdateResult>,
   },
 });

@@ -17,6 +17,9 @@ export type HomeDictionary = {
     connectButton: string;
     tipsTitle: string;
     tips: string[];
+    recentTitle: string;
+    recentEmpty: string;
+    recentClearLabel: string;
   };
   errors: {
     missingHost: string;
