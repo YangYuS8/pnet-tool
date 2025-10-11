@@ -17,7 +17,7 @@
     "watch:electron": "pnpm exec tsc -p electron/tsconfig.json --watch",
     "build:electron": "pnpm exec tsc -p electron/tsconfig.json",
     "dist:appimage": "pnpm run build && pnpm exec electron-builder --linux AppImage",
-  "dist:win": "pnpm run build && pnpm exec electron-builder --win nsis --x64",
+    "dist:win": "pnpm run build && pnpm exec electron-builder --win nsis --x64",
     "lint": "eslint",
     "postinstall": "pnpm exec electron-rebuild -f -w node-pty"
   },

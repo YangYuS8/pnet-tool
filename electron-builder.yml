@@ -21,6 +21,7 @@ extraMetadata:
   main: dist-electron/main.js
 linux:
   icon: build/icons/pnet-tool.svg
+  artifactName: pnet-tool-${version}.${ext}
   target:
     - target: AppImage
       arch:
@@ -37,7 +38,7 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: PNET Tool-${version}-setup.${ext}
+  artifactName: pnet-tool-${version}-setup.${ext}
 nsis:
   oneClick: false
   perMachine: false
