@@ -8,16 +8,17 @@ arch=('x86_64')
 url="https://github.com/YangYuS8/pnet-tool"
 license=('custom')
 depends=('fuse2' 'xdg-utils' 'desktop-file-utils' 'gtk3')
-makedepends=('curl')
+makedepends=('curl' 'axel')
+DLAGENTS=('https::/usr/bin/axel -n 8 -o %o %u'
+          'http::/usr/bin/axel -n 8 -o %o %u')
 options=('!strip')
 source=(
   "pnet-tool-${pkgver}.AppImage::https://github.com/YangYuS8/pnet-tool/releases/download/v${pkgver}/pnet-tool-${pkgver}.AppImage"
   "pnet-tool.desktop"
   "pnet-tool.sh"
   "pnet-tool.svg"
-  "README.md"
 )
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
 install=pnet-tool.install
 
 package() {
@@ -25,5 +26,4 @@ package() {
   install -Dm755 "$srcdir/pnet-tool.sh" "$pkgdir/usr/bin/pnet-tool"
   install -Dm644 "$srcdir/pnet-tool.desktop" "$pkgdir/usr/share/applications/pnet-tool.desktop"
   install -Dm644 "$srcdir/pnet-tool.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/pnet-tool.svg"
-  install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/pnet-tool/README.md"
 }
