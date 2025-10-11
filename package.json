@@ -1,6 +1,6 @@
 {
   "name": "pnet-tool",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "private": true,
   "description": "Electron 桌面端的 PNETLab Telnet 客户端，集成健康探测与协议处理自动化",
   "author": "YangYuS8",
@@ -16,8 +16,8 @@
     "launch:electron": "pnpm exec wait-on tcp:3000 file:dist-electron/main.js && pnpm exec electron dist-electron/main.js",
     "watch:electron": "pnpm exec tsc -p electron/tsconfig.json --watch",
     "build:electron": "pnpm exec tsc -p electron/tsconfig.json",
-    "dist:appimage": "pnpm run build && pnpm exec electron-builder --linux AppImage",
-    "dist:win": "pnpm run build && pnpm exec electron-builder --win nsis --x64",
+    "dist:appimage": "pnpm run build && pnpm exec electron-builder --linux AppImage --publish never",
+    "dist:win": "pnpm run build && pnpm exec electron-builder --win nsis --x64 --publish never",
     "lint": "eslint",
     "postinstall": "pnpm exec electron-rebuild -f -w node-pty"
   },
