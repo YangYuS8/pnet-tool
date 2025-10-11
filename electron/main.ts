@@ -13,12 +13,37 @@ const SUPPORTED_LOCALES = ["zh-CN", "en"] as const;
 type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 const DEFAULT_LOCALE: SupportedLocale = "zh-CN";
 
+type TerminalPreferences = {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+};
+
+const TERMINAL_FONT_KEYS = new Set([
+  "geist-mono",
+  "system-mono",
+  "jetbrains-mono",
+  "fira-code",
+  "cascadia-code",
+  "consolas",
+]);
+
+const DEFAULT_TERMINAL_PREFERENCES: TerminalPreferences = {
+  fontFamily: "geist-mono",
+  fontSize: 13,
+  lineHeight: 1.2,
+  letterSpacing: 0,
+};
+
 type AppSettings = {
   preferredLocale: SupportedLocale;
+  terminal: TerminalPreferences;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   preferredLocale: DEFAULT_LOCALE,
+  terminal: { ...DEFAULT_TERMINAL_PREFERENCES },
 };
 
 let cachedSettings: AppSettings | null = null;
@@ -34,12 +59,42 @@ function normalizeLocaleCandidate(value: unknown): SupportedLocale | null {
   return SUPPORTED_LOCALES.includes(value as SupportedLocale) ? (value as SupportedLocale) : null;
 }
 
+function clampNumber(value: unknown, fallback: number, minimum: number, maximum: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.min(Math.max(numeric, minimum), maximum);
+}
+
+function sanitizeTerminalPreferences(
+  input: Partial<TerminalPreferences> | null | undefined,
+  fallback: TerminalPreferences = DEFAULT_TERMINAL_PREFERENCES
+): TerminalPreferences {
+  const base = fallback ?? DEFAULT_TERMINAL_PREFERENCES;
+  const rawFontFamily = typeof input?.fontFamily === "string" ? input.fontFamily : base.fontFamily;
+  const fontFamily = TERMINAL_FONT_KEYS.has(rawFontFamily) ? rawFontFamily : DEFAULT_TERMINAL_PREFERENCES.fontFamily;
+  const fontSize = clampNumber(input?.fontSize, base.fontSize, 10, 26);
+  const lineHeight = clampNumber(input?.lineHeight, base.lineHeight, 1, 2);
+  const letterSpacing = clampNumber(input?.letterSpacing, base.letterSpacing, -1, 2);
+
+  return {
+    fontFamily,
+    fontSize,
+    lineHeight,
+    letterSpacing,
+  } satisfies TerminalPreferences;
+}
+
 function readSettings(): AppSettings {
   if (cachedSettings) {
     return cachedSettings;
   }
 
-  const fallback: AppSettings = { ...DEFAULT_SETTINGS };
+  const fallback: AppSettings = {
+    preferredLocale: DEFAULT_SETTINGS.preferredLocale,
+    terminal: { ...DEFAULT_TERMINAL_PREFERENCES },
+  };
 
   try {
     const filePath = getSettingsPath();
@@ -51,7 +106,11 @@ function readSettings(): AppSettings {
     const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const preferredLocale = normalizeLocaleCandidate(parsed.preferredLocale) ?? fallback.preferredLocale;
-    cachedSettings = { preferredLocale };
+    const terminal = sanitizeTerminalPreferences((parsed as Partial<AppSettings> & { terminal?: Partial<TerminalPreferences> }).terminal, fallback.terminal);
+    cachedSettings = {
+      preferredLocale,
+      terminal,
+    } satisfies AppSettings;
     return cachedSettings;
   } catch (error) {
     console.warn("Failed to read settings file", error);
@@ -60,10 +119,16 @@ function readSettings(): AppSettings {
   }
 }
 
-function writeSettings(update: Partial<AppSettings>) {
+type SettingsUpdatePayload = {
+  preferredLocale?: SupportedLocale;
+  terminal?: Partial<TerminalPreferences>;
+};
+
+function writeSettings(update: SettingsUpdatePayload) {
   const current = readSettings();
   const next: AppSettings = {
     preferredLocale: normalizeLocaleCandidate(update.preferredLocale) ?? current.preferredLocale,
+    terminal: sanitizeTerminalPreferences(update.terminal ? { ...current.terminal, ...update.terminal } : current.terminal, current.terminal),
   };
 
   try {
@@ -81,6 +146,19 @@ function writeSettings(update: Partial<AppSettings>) {
 
 function updatePreferredLocale(locale: SupportedLocale) {
   return writeSettings({ preferredLocale: locale });
+}
+
+function updateTerminalPreferences(settings: TerminalPreferences) {
+  return writeSettings({ terminal: settings });
+}
+
+function terminalPreferencesEqual(a: TerminalPreferences, b: TerminalPreferences) {
+  return (
+    a.fontFamily === b.fontFamily &&
+    a.fontSize === b.fontSize &&
+    a.lineHeight === b.lineHeight &&
+    a.letterSpacing === b.letterSpacing
+  );
 }
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
@@ -1055,6 +1133,25 @@ ipcMain.handle(
     } as const;
   }
 );
+
+ipcMain.handle("settings:set-terminal", (_event, payload: Partial<TerminalPreferences> = {}) => {
+  if (!payload || typeof payload !== "object") {
+    return { ok: false, updated: false, error: "invalid-payload" } as const;
+  }
+
+  const current = readSettings();
+  const merged = sanitizeTerminalPreferences({ ...current.terminal, ...payload }, current.terminal);
+  if (terminalPreferencesEqual(merged, current.terminal)) {
+    return { ok: true, updated: false, settings: current.terminal } as const;
+  }
+
+  const next = updateTerminalPreferences(merged);
+  return {
+    ok: true,
+    updated: true,
+    settings: next.terminal,
+  } as const;
+});
 
 ipcMain.handle("window:get-state", (event) => {
   const target = BrowserWindow.fromWebContents(event.sender);

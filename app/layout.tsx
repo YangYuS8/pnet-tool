@@ -4,6 +4,7 @@ import "./globals.css";
 import "@xterm/xterm/css/xterm.css";
 
 import { LocaleProvider } from "@/components/locale/locale-provider";
+import { TerminalSettingsProvider } from "@/components/terminal/terminal-settings-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { defaultLocale } from "@/lib/i18n/config";
 
@@ -33,7 +34,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-          <LocaleProvider>{children}</LocaleProvider>
+          <LocaleProvider>
+            <TerminalSettingsProvider>{children}</TerminalSettingsProvider>
+          </LocaleProvider>
         </ThemeProvider>
       </body>
     </html>

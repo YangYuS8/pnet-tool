@@ -91,14 +91,29 @@ type PnetlabHealthResponse = {
   message?: string;
 };
 
+type TerminalPreferences = {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+};
+
 type AppSettings = {
   preferredLocale: string;
+  terminal: TerminalPreferences;
 };
 
 type SettingsUpdateResult = {
   ok: boolean;
   updated: boolean;
   locale?: string;
+  error?: string;
+};
+
+type TerminalSettingsUpdateResult = {
+  ok: boolean;
+  updated: boolean;
+  settings?: TerminalPreferences;
   error?: string;
 };
 
@@ -139,6 +154,7 @@ declare global {
       settings?: {
         get: () => Promise<AppSettings>;
         setPreferredLocale: (locale: string) => Promise<SettingsUpdateResult>;
+        setTerminalPreferences: (settings: Partial<TerminalPreferences>) => Promise<TerminalSettingsUpdateResult>;
       };
     };
   }
@@ -243,5 +259,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     get: () => ipcRenderer.invoke("settings:get") as Promise<AppSettings>,
     setPreferredLocale: (locale: string) =>
       ipcRenderer.invoke("settings:set-preferred-locale", { locale }) as Promise<SettingsUpdateResult>,
+    setTerminalPreferences: (settings: Partial<TerminalPreferences>) =>
+      ipcRenderer.invoke("settings:set-terminal", settings) as Promise<TerminalSettingsUpdateResult>,
   },
 });

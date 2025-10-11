@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useTerminalSettings, resolveTerminalFontFamily } from "@/components/terminal/terminal-settings-provider";
 import type { HomeDictionary } from "@/lib/i18n/dictionaries";
 import { cn } from "@/lib/utils";
 
@@ -64,12 +65,15 @@ export function TelnetTerminal({
   const disposeOnUnmountRef = useRef<boolean>(disposeOnUnmount);
   const previousVisibilityRef = useRef<boolean>(isVisible);
   const hasHydratedBufferRef = useRef(false);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const statusChangeHandlerRef = useRef<typeof onStatusChange>(onStatusChange);
 
   const [status, setStatus] = useState<TerminalStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [isDesktopAvailable, setDesktopAvailable] = useState(false);
   const [isDisposing, setIsDisposing] = useState(false);
   const { resolvedTheme } = useTheme();
+  const { settings: terminalSettings, resolvedFontFamily } = useTerminalSettings();
 
   const lightTheme = useMemo<ITheme>(
     () => ({
@@ -172,8 +176,8 @@ export function TelnetTerminal({
       terminalRef.current = null;
       fitAddonRef.current = null;
 
-    sessionIdRef.current = null;
-    hasHydratedBufferRef.current = false;
+      sessionIdRef.current = null;
+      hasHydratedBufferRef.current = false;
 
       if (killProcess && sessionId && window.desktopBridge?.terminal) {
         try {
@@ -185,6 +189,30 @@ export function TelnetTerminal({
           setIsDisposing(false);
         }
       }
+    },
+    []
+  );
+
+  const scheduleFit = useCallback(
+    (options: { scrollToBottom?: boolean } = {}) => {
+      const shouldScroll = options.scrollToBottom ?? true;
+      if (!terminalRef.current || !fitAddonRef.current) {
+        return;
+      }
+      const terminal = terminalRef.current;
+      const fitAddon = fitAddonRef.current;
+      window.requestAnimationFrame(() => {
+        fitAddon.fit();
+        if (shouldScroll) {
+          terminal.scrollToBottom();
+        }
+        if (sessionIdRef.current && window.desktopBridge?.terminal) {
+          window.desktopBridge.terminal.resize(sessionIdRef.current, {
+            cols: terminal.cols,
+            rows: terminal.rows,
+          });
+        }
+      });
     },
     []
   );
@@ -254,8 +282,10 @@ export function TelnetTerminal({
 
     const terminal = new Terminal({
       convertEol: true,
-      fontFamily: "var(--font-geist-mono, monospace)",
-      fontSize: 13,
+      fontFamily: resolvedFontFamily,
+      fontSize: terminalSettings.fontSize,
+      lineHeight: terminalSettings.lineHeight,
+      letterSpacing: terminalSettings.letterSpacing,
       cursorBlink: true,
       cursorStyle: "block",
       scrollback: 1000,
@@ -269,22 +299,24 @@ export function TelnetTerminal({
     fitAddonRef.current = fitAddon;
 
     terminal.open(containerRef.current);
-    fitAddon.fit();
+    scheduleFit({ scrollToBottom: false });
 
     const resizeListener = () => {
-      window.requestAnimationFrame(() => {
-        fitAddon.fit();
-        if (sessionIdRef.current && window.desktopBridge?.terminal) {
-          window.desktopBridge.terminal.resize(sessionIdRef.current, {
-            cols: terminal.cols,
-            rows: terminal.rows,
-          });
-        }
-      });
+      scheduleFit();
     };
 
     window.addEventListener("resize", resizeListener);
     resizeDisposerRef.current = () => window.removeEventListener("resize", resizeListener);
+
+    const container = containerRef.current;
+    resizeObserverRef.current?.disconnect();
+    if (container) {
+      const observer = new ResizeObserver(() => {
+        scheduleFit();
+      });
+      observer.observe(container);
+      resizeObserverRef.current = observer;
+    }
 
     const dimensions = { cols: terminal.cols, rows: terminal.rows } as const;
 
@@ -362,7 +394,7 @@ export function TelnetTerminal({
       setStatus("error");
       await cleanupSession(true);
     }
-  }, [activeTheme, cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, label, mode, onSessionCreated, port, sessionId, subscribeSessionStreams]);
+  }, [activeTheme, cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, label, mode, onSessionCreated, port, scheduleFit, sessionId, subscribeSessionStreams]);
 
   useEffect(() => {
     if (mode === "attach" && sessionId && status === "idle") {
@@ -371,8 +403,12 @@ export function TelnetTerminal({
   }, [handleConnect, mode, sessionId, status]);
 
   useEffect(() => {
-    onStatusChange?.({ status, error });
-  }, [status, error, onStatusChange]);
+    statusChangeHandlerRef.current = onStatusChange;
+  }, [onStatusChange]);
+
+  useEffect(() => {
+    statusChangeHandlerRef.current?.({ status, error });
+  }, [status, error]);
 
   useEffect(() => {
     if (autoConnectSignal === undefined) {
@@ -399,6 +435,8 @@ export function TelnetTerminal({
   useEffect(() => {
     return () => {
       void cleanupSession(disposeOnUnmountRef.current);
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
     };
   }, [cleanupSession]);
 
@@ -408,22 +446,26 @@ export function TelnetTerminal({
     }
     terminalRef.current.options.theme = activeTheme;
     terminalRef.current.refresh(0, terminalRef.current.rows - 1);
-  }, [activeTheme]);
+    scheduleFit();
+  }, [activeTheme, scheduleFit]);
+
+  useEffect(() => {
+    if (!terminalRef.current) {
+      return;
+    }
+    terminalRef.current.options.fontFamily = resolvedFontFamily;
+    terminalRef.current.options.fontSize = terminalSettings.fontSize;
+    terminalRef.current.options.lineHeight = terminalSettings.lineHeight;
+    terminalRef.current.options.letterSpacing = terminalSettings.letterSpacing;
+    scheduleFit();
+  }, [resolvedFontFamily, scheduleFit, terminalSettings.fontFamily, terminalSettings.fontSize, terminalSettings.letterSpacing, terminalSettings.lineHeight]);
 
   useEffect(() => {
     if (isVisible && !previousVisibilityRef.current) {
-      window.requestAnimationFrame(() => {
-        fitAddonRef.current?.fit();
-        if (sessionIdRef.current && terminalRef.current) {
-          window.desktopBridge?.terminal.resize(sessionIdRef.current, {
-            cols: terminalRef.current.cols,
-            rows: terminalRef.current.rows,
-          });
-        }
-      });
+      scheduleFit();
     }
     previousVisibilityRef.current = isVisible;
-  }, [isVisible]);
+  }, [isVisible, scheduleFit]);
 
   const actionButtonLabel = useMemo(() => {
     if (status === "connecting") {

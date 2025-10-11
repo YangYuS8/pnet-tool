@@ -66,6 +66,7 @@ export type SettingsDictionary = {
   languageSection: {
     title: string;
     description: string;
+    selectLabel: string;
     options: Array<{
       value: Locale;
       label: string;
@@ -73,6 +74,24 @@ export type SettingsDictionary = {
     }>;
     restartNotice: string;
     saveHint: string;
+  };
+  terminalSection: {
+    title: string;
+    description: string;
+    fontFamilyLabel: string;
+    fontSizeLabel: string;
+    lineHeightLabel: string;
+    letterSpacingLabel: string;
+    resetButton: string;
+    previewLabel: string;
+    previewSample: string;
+    fontFamilyOptions: Array<{
+      value: string;
+      label: string;
+    }>;
+    fontSizeHelp: string;
+    lineHeightHelp: string;
+    letterSpacingHelp: string;
   };
 };
 
