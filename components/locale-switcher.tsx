@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 
-import type { Locale } from "@/lib/i18n/config";
-import { locales } from "@/lib/i18n/config";
+import { useLocaleContext } from "@/components/locale/locale-provider";
+import { Button } from "@/components/ui/button";
 
 export type LocaleSwitchCopy = {
   ariaLabel: string;
@@ -12,42 +11,41 @@ export type LocaleSwitchCopy = {
   shortLabel: string;
 };
 
-function buildSwitchPath(
-  pathname: string,
-  searchParams: URLSearchParams,
-  targetLocale: Locale
-) {
-  const segments = pathname.split("/");
-  if (locales.includes(segments[1] as Locale)) {
-    segments[1] = targetLocale;
-  } else {
-    segments.splice(1, 0, targetLocale);
-  }
-  const basePath = segments.join("/") || "/";
-  const queryString = searchParams.toString();
-  return queryString ? `${basePath}?${queryString}` : basePath;
-}
-
 export function LocaleSwitcher({ copy }: { copy: LocaleSwitchCopy }) {
-  const params = useParams();
-  const pathname = usePathname() ?? "/";
-  const searchParamsValues = useSearchParams();
-  const currentLocale = (params?.locale as Locale) ?? locales[0];
-  const targetLocale = locales.find((locale) => locale !== currentLocale) ?? locales[0];
-
-  const href = buildSwitchPath(
-    pathname,
-    new URLSearchParams(searchParamsValues?.toString()),
-    targetLocale
+  const { locale, availableLocales, setLocale, isChanging } = useLocaleContext();
+  const [error, setError] = useState<string | null>(null);
+  const targetLocale = useMemo(
+    () => availableLocales.find((candidate) => candidate !== locale) ?? locale,
+    [availableLocales, locale]
   );
 
   return (
-    <Link
-      href={href}
-      aria-label={`${copy.ariaLabel} (${copy.targetLocaleName})`}
-      className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-    >
-      {copy.shortLabel}
-    </Link>
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-label={`${copy.ariaLabel} (${copy.targetLocaleName})`}
+        disabled={isChanging}
+        onClick={async () => {
+          if (targetLocale === locale) {
+            return;
+          }
+          setError(null);
+          try {
+            await setLocale(targetLocale);
+          } catch (error) {
+            setError(error instanceof Error ? error.message : String(error));
+          }
+        }}
+      >
+        {copy.shortLabel}
+      </Button>
+      {error ? (
+        <span className="sr-only" role="status">
+          {error}
+        </span>
+      ) : null}
+    </>
   );
 }

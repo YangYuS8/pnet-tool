@@ -10,12 +10,11 @@ import {
   type TerminalStatusChange,
 } from "@/components/terminal/telnet-terminal";
 import { SessionTabs } from "@/components/home/session-tabs";
+import { useLocaleDictionary } from "@/components/locale/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import type { Locale } from "@/lib/i18n/config";
-import type { HomeDictionary } from "@/lib/i18n/dictionaries";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_TELNET_PORT = 23;
@@ -52,12 +51,8 @@ type ManagedSession = {
   error: string | null;
 };
 
-export type HomePageProps = {
-  dictionary: HomeDictionary;
-  locale: Locale;
-};
-
-export function HomePage({ dictionary, locale }: HomePageProps) {
+export function HomePage() {
+  const { dictionary } = useLocaleDictionary("home");
   const [ip, setIp] = useState("");
   const [port, setPort] = useState(DEFAULT_TELNET_PORT);
   const [sessions, setSessions] = useState<ManagedSession[]>([]);
@@ -473,7 +468,7 @@ export function HomePage({ dictionary, locale }: HomePageProps) {
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" asChild>
-              <Link href={`/${locale}/settings`}>
+              <Link href="/settings">
                 <Settings2 className="h-4 w-4" />
                 {dictionary.navigation.settingsLabel}
               </Link>

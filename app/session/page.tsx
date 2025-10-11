@@ -3,11 +3,12 @@
 import { Loader2 } from "lucide-react";
 
 import { DesktopWindowChrome } from "@/components/desktop/window-chrome";
-import { home as zhCNHome } from "@/locales/zh-CN";
-
-const terminalDictionary = zhCNHome.terminal;
+import { useLocaleDictionary } from "@/components/locale/locale-provider";
 
 export default function SessionPage() {
+  const { dictionary } = useLocaleDictionary("home");
+  const terminalDictionary = dictionary.terminal;
+
   return (
     <DesktopWindowChrome>
       <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-background px-6 py-6 text-sm text-muted-foreground">

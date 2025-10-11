@@ -70,16 +70,12 @@ export const settings: Dictionaries["settings"] = {
   },
   languageSection: {
     title: "Language",
-    description: "Choose the interface language for the next launch.",
+    description: "Switch the interface language instantly without interrupting active sessions.",
     options: [
       { value: "zh-CN", label: "简体中文" },
       { value: "en", label: "English" },
     ],
-    restartNotice: "Changing the language requires restarting the application.",
-    saveHint: "Your selection is saved automatically.",
-  },
-  restart: {
-    button: "Restart now",
-    pending: "Restart the app to apply the new language.",
+    restartNotice: "Changes apply immediately and existing sessions remain connected.",
+    saveHint: "Your selection is saved automatically for future launches.",
   },
 };

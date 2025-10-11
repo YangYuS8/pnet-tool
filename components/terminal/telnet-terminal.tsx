@@ -172,8 +172,8 @@ export function TelnetTerminal({
       terminalRef.current = null;
       fitAddonRef.current = null;
 
-      sessionIdRef.current = null;
-  hasHydratedBufferRef.current = false;
+    sessionIdRef.current = null;
+    hasHydratedBufferRef.current = false;
 
       if (killProcess && sessionId && window.desktopBridge?.terminal) {
         try {
@@ -245,7 +245,7 @@ export function TelnetTerminal({
 
     setStatus("connecting");
     setError(null);
-  hasHydratedBufferRef.current = false;
+    hasHydratedBufferRef.current = false;
 
     const [{ Terminal }, { FitAddon }] = await Promise.all([
       import("@xterm/xterm"),

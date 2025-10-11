@@ -74,10 +74,6 @@ export type SettingsDictionary = {
     restartNotice: string;
     saveHint: string;
   };
-  restart: {
-    button: string;
-    pending: string;
-  };
 };
 
 export type Dictionaries = {

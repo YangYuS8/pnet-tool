@@ -1,10 +1,10 @@
 import { DesktopWindowChrome } from "@/components/desktop/window-chrome";
-import { HomePage } from "@/components/home/home-page";
+import { SettingsPage } from "@/components/settings/settings-page";
 
-export default function RootPage() {
+export default function SettingsRoute() {
   return (
     <DesktopWindowChrome>
-      <HomePage />
+      <SettingsPage />
     </DesktopWindowChrome>
   );
 }

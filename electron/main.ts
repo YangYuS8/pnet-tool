@@ -49,10 +49,10 @@ function readSettings(): AppSettings {
       return cachedSettings;
     }
     const raw = fs.readFileSync(filePath, "utf-8");
-  const parsed = JSON.parse(raw) as Partial<AppSettings>;
-  const preferredLocale = normalizeLocaleCandidate(parsed.preferredLocale) ?? fallback.preferredLocale;
-  cachedSettings = { preferredLocale };
-  return cachedSettings;
+    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    const preferredLocale = normalizeLocaleCandidate(parsed.preferredLocale) ?? fallback.preferredLocale;
+    cachedSettings = { preferredLocale };
+    return cachedSettings;
   } catch (error) {
     console.warn("Failed to read settings file", error);
     cachedSettings = fallback;
@@ -77,10 +77,6 @@ function writeSettings(update: Partial<AppSettings>) {
   }
 
   return cachedSettings;
-}
-
-function getPreferredLocale(): SupportedLocale {
-  return readSettings().preferredLocale ?? DEFAULT_SETTINGS.preferredLocale;
 }
 
 function updatePreferredLocale(locale: SupportedLocale) {
@@ -196,22 +192,6 @@ function resolveTelnetProtocolTarget() {
 }
 
 let mainWindow: BrowserWindow | null = null;
-
-function createDevStartUrl(locale: SupportedLocale) {
-  try {
-    const url = new URL(DEV_SERVER_URL);
-    url.pathname = `/${locale}`;
-    return url.toString();
-  } catch (error) {
-    console.warn("Failed to construct dev renderer URL from", DEV_SERVER_URL, error);
-    const trimmed = DEV_SERVER_URL.endsWith("/") ? DEV_SERVER_URL.slice(0, -1) : DEV_SERVER_URL;
-    return `${trimmed}/${locale}`;
-  }
-}
-
-function createProdStartUrl(locale: SupportedLocale) {
-  return `app://-/${locale}/index.html`;
-}
 
 type WindowStatePayload = {
   isMaximized: boolean;
@@ -703,8 +683,7 @@ function createMainWindow() {
   });
 
   let loadPromise: Promise<void> | undefined;
-  const preferredLocale = getPreferredLocale();
-  const startUrl = isDev ? createDevStartUrl(preferredLocale) : createProdStartUrl(preferredLocale);
+  const startUrl = isDev ? DEV_SERVER_URL : "app://-/index.html";
 
   if (isDev) {
     loadPromise = mainWindow
@@ -1064,7 +1043,6 @@ ipcMain.handle(
       return {
         ok: true,
         updated: false,
-        requiresRestart: false,
         locale: current.preferredLocale,
       } as const;
     }
@@ -1073,7 +1051,6 @@ ipcMain.handle(
     return {
       ok: true,
       updated: true,
-      requiresRestart: true,
       locale: next.preferredLocale,
     } as const;
   }

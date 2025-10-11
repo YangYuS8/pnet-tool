@@ -70,16 +70,12 @@ export const settings: Dictionaries["settings"] = {
   },
   languageSection: {
     title: "语言",
-    description: "选择下次启动时使用的界面语言。",
+    description: "立即切换界面语言，现有连接不会中断。",
     options: [
       { value: "zh-CN", label: "简体中文" },
       { value: "en", label: "English" },
     ],
-    restartNotice: "切换语言需要重新启动应用才能生效。",
-    saveHint: "选择会自动保存。",
-  },
-  restart: {
-    button: "立即重启",
-    pending: "请重新启动应用以应用新语言。",
+    restartNotice: "语言切换会立即生效，当前会话保持连接。",
+    saveHint: "偏好会自动保存，下一次启动仍会使用选定语言。",
   },
 };

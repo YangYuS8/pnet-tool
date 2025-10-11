@@ -98,7 +98,6 @@ type AppSettings = {
 type SettingsUpdateResult = {
   ok: boolean;
   updated: boolean;
-  requiresRestart: boolean;
   locale?: string;
   error?: string;
 };
