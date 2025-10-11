@@ -1,6 +1,6 @@
 {
   "name": "pnet-tool",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Electron 桌面端的 PNETLab Telnet 客户端，集成健康探测与协议处理自动化",
   "author": "YangYuS8",
