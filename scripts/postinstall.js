@@ -16,8 +16,18 @@ const versions = {
   '@electron/rebuild': devDependencies['@electron/rebuild'] || dependencies['@electron/rebuild'],
 };
 
+function spawnPackageWithNpx(pkgName, binName, args) {
+  const pinned = versions[pkgName];
+  const target = pinned ? `${pkgName}@${pinned}` : pkgName;
+  const npxArgs = pkgName === binName ? ['--yes', target, ...args] : ['--yes', target, binName, ...args];
+  return spawnSync('npx', npxArgs, { stdio: 'inherit' });
+}
+
 function runWithFallback(pkgName, binName, args, { allowDlx } = { allowDlx: true }) {
   const execResult = spawnSync('pnpm', ['exec', binName, ...args], { stdio: 'inherit' });
+  if (execResult.error && execResult.error.code === 'ENOENT') {
+    return spawnPackageWithNpx(pkgName, binName, args);
+  }
   if (execResult.status === 0 || !allowDlx) {
     return execResult;
   }
@@ -25,7 +35,11 @@ function runWithFallback(pkgName, binName, args, { allowDlx } = { allowDlx: true
   const pinned = versions[pkgName];
   const dlxTarget = pinned ? `${pkgName}@${pinned}` : pkgName;
   const dlxArgs = pkgName === binName ? [dlxTarget, ...args] : [dlxTarget, binName, ...args];
-  return spawnSync('pnpm', ['dlx', ...dlxArgs], { stdio: 'inherit' });
+  const dlxResult = spawnSync('pnpm', ['dlx', ...dlxArgs], { stdio: 'inherit' });
+  if (dlxResult.error && dlxResult.error.code === 'ENOENT') {
+    return spawnPackageWithNpx(pkgName, binName, args);
+  }
+  return dlxResult;
 }
 
 const installAppDeps = runWithFallback('electron-builder', 'electron-builder', ['install-app-deps', '--platform', process.platform, '--arch', process.arch], { allowDlx: false });
