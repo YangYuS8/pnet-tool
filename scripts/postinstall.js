@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const { dependencies = {}, devDependencies = {} } = require('../package.json');
 
 const skip = process.env.PNET_SKIP_POSTINSTALL === '1';
@@ -16,15 +18,38 @@ const versions = {
   '@electron/rebuild': devDependencies['@electron/rebuild'] || dependencies['@electron/rebuild'],
 };
 
+function spawnPnpm(args) {
+  const pnpmExecPath = process.env.npm_execpath;
+  if (pnpmExecPath && pnpmExecPath.includes('pnpm')) {
+    return spawnSync(process.execPath, [pnpmExecPath, ...args], { stdio: 'inherit' });
+  }
+
+  const direct = spawnSync('pnpm', args, { stdio: 'inherit' });
+  if (!direct.error || direct.error.code !== 'ENOENT') {
+    return direct;
+  }
+
+  return spawnSync('corepack', ['pnpm', ...args], { stdio: 'inherit' });
+}
+
 function spawnPackageWithNpx(pkgName, binName, args) {
   const pinned = versions[pkgName];
   const target = pinned ? `${pkgName}@${pinned}` : pkgName;
   const npxArgs = pkgName === binName ? ['--yes', target, ...args] : ['--yes', target, binName, ...args];
+
+  const bundledNpx = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+  if (fs.existsSync(bundledNpx)) {
+    const bundled = spawnSync(process.execPath, [bundledNpx, ...npxArgs], { stdio: 'inherit' });
+    if (!bundled.error || bundled.error.code !== 'ENOENT') {
+      return bundled;
+    }
+  }
+
   return spawnSync('npx', npxArgs, { stdio: 'inherit' });
 }
 
 function runWithFallback(pkgName, binName, args, { allowDlx } = { allowDlx: true }) {
-  const execResult = spawnSync('pnpm', ['exec', binName, ...args], { stdio: 'inherit' });
+  const execResult = spawnPnpm(['exec', binName, ...args]);
   if (execResult.error && execResult.error.code === 'ENOENT') {
     return spawnPackageWithNpx(pkgName, binName, args);
   }
@@ -35,7 +60,7 @@ function runWithFallback(pkgName, binName, args, { allowDlx } = { allowDlx: true
   const pinned = versions[pkgName];
   const dlxTarget = pinned ? `${pkgName}@${pinned}` : pkgName;
   const dlxArgs = pkgName === binName ? [dlxTarget, ...args] : [dlxTarget, binName, ...args];
-  const dlxResult = spawnSync('pnpm', ['dlx', ...dlxArgs], { stdio: 'inherit' });
+  const dlxResult = spawnPnpm(['dlx', ...dlxArgs]);
   if (dlxResult.error && dlxResult.error.code === 'ENOENT') {
     return spawnPackageWithNpx(pkgName, binName, args);
   }
