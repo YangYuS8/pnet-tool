@@ -50,4 +50,4 @@ protocols:
     schemes:
       - telnet
 asar: true
-npmRebuild: false
+npmRebuild: true
