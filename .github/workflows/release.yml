@@ -167,14 +167,17 @@ jobs:
       - build-windows
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifacts
+      - name: Download artifacts (all)
         uses: actions/download-artifact@v4
         with:
+          pattern: build-*
           path: release-assets
           merge-multiple: true
 
-      - name: List assets
-        run: ls -R release-assets
+      - name: Ensure assets dir and list
+        run: |
+          mkdir -p release-assets
+          ls -R release-assets || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
