@@ -66,7 +66,7 @@ async function readDesktopPreferences(): Promise<Partial<TerminalSettingsState> 
     return null;
   }
   try {
-    const settings = await window.desktopBridge.settings.get();
+  const settings = await window.desktopBridge!.settings!.get();
     const raw = settings?.terminal;
     if (!raw || typeof raw !== "object") {
       return null;
@@ -110,7 +110,7 @@ async function persistPreferences(settings: TerminalSettingsState) {
   }
 
   try {
-    await window.desktopBridge?.settings?.setTerminalPreferences(settings);
+  await window.desktopBridge!.settings!.setTerminalPreferences(settings);
   } catch (error) {
     console.warn("Failed to persist terminal settings to desktop settings", error);
   }

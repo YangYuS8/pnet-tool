@@ -50,7 +50,7 @@ async function readDesktopPreferredLocale(): Promise<Locale | null> {
     return null;
   }
   try {
-    const settings = await window.desktopBridge.settings.get();
+  const settings = await window.desktopBridge!.settings!.get();
     if (isSupportedLocale(settings?.preferredLocale)) {
       return settings.preferredLocale;
     }

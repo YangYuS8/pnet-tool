@@ -4,6 +4,7 @@ import "./globals.css";
 import "@xterm/xterm/css/xterm.css";
 
 import { LocaleProvider } from "@/components/locale/locale-provider";
+import { TauriBridgeProvider } from "@/components/desktop/tauri-bridge-provider";
 import { TerminalSettingsProvider } from "@/components/terminal/terminal-settings-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { defaultLocale } from "@/lib/i18n/config";
@@ -20,7 +21,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "PNET Tool",
-  description: "Electron 桌面端的 PNETLab 终端伴侣",
+  description: "Tauri 桌面端的 PNETLab 终端伴侣",
 };
 
 export default function RootLayout({
@@ -34,9 +35,11 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-          <LocaleProvider>
-            <TerminalSettingsProvider>{children}</TerminalSettingsProvider>
-          </LocaleProvider>
+          <TauriBridgeProvider>
+            <LocaleProvider>
+              <TerminalSettingsProvider>{children}</TerminalSettingsProvider>
+            </LocaleProvider>
+          </TauriBridgeProvider>
         </ThemeProvider>
       </body>
     </html>

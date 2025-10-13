@@ -47,14 +47,14 @@ export function DesktopWindowChrome({ children }: DesktopWindowChromeProps) {
       setWindowState(payload);
     };
 
-    void window.desktopBridge.window
+  void window.desktopBridge!.window
       ?.getState()
       .then(updateState)
       .catch(() => {
         /* swallow */
       });
 
-    const unsubscribe = window.desktopBridge.window?.onStateChange(updateState);
+  const unsubscribe = window.desktopBridge!.window?.onStateChange(updateState);
     return () => {
       unsubscribe?.();
     };
@@ -66,12 +66,12 @@ export function DesktopWindowChrome({ children }: DesktopWindowChromeProps) {
   );
 
   const handleMinimize = useCallback(() => {
-    window.desktopBridge.window?.minimize();
+  window.desktopBridge!.window?.minimize();
   }, []);
 
   const handleToggleMaximize = useCallback(async () => {
     try {
-      const nextState = await window.desktopBridge.window?.toggleMaximize();
+  const nextState = await window.desktopBridge!.window?.toggleMaximize();
       if (nextState) {
         setWindowState(nextState);
       }
@@ -81,7 +81,7 @@ export function DesktopWindowChrome({ children }: DesktopWindowChromeProps) {
   }, []);
 
   const handleClose = useCallback(() => {
-    window.desktopBridge.window?.close();
+  window.desktopBridge!.window?.close();
   }, []);
 
   if (!isDesktop) {

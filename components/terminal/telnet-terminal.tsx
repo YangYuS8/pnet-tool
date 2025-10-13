@@ -7,7 +7,7 @@ import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { useTerminalSettings, resolveTerminalFontFamily } from "@/components/terminal/terminal-settings-provider";
+import { useTerminalSettings } from "@/components/terminal/terminal-settings-provider";
 import type { HomeDictionary } from "@/lib/i18n/dictionaries";
 import { cn } from "@/lib/utils";
 
@@ -130,7 +130,7 @@ export function TelnetTerminal({
   const activeTheme = useMemo(() => (resolvedTheme === "dark" ? darkTheme : lightTheme), [darkTheme, lightTheme, resolvedTheme]);
 
   useEffect(() => {
-    setDesktopAvailable(typeof window !== "undefined" && Boolean(window.desktopBridge?.terminal));
+  setDesktopAvailable(typeof window !== "undefined" && Boolean(window.desktopBridge?.terminal));
   }, []);
 
   useEffect(() => {
@@ -179,10 +179,10 @@ export function TelnetTerminal({
       sessionIdRef.current = null;
       hasHydratedBufferRef.current = false;
 
-      if (killProcess && sessionId && window.desktopBridge?.terminal) {
+  if (killProcess && sessionId && window.desktopBridge?.terminal) {
         try {
           setIsDisposing(true);
-          await window.desktopBridge.terminal.dispose(sessionId);
+          await window.desktopBridge!.terminal.dispose(sessionId);
         } catch (disposeError) {
           console.error("Failed to dispose terminal session", disposeError);
         } finally {
@@ -207,14 +207,14 @@ export function TelnetTerminal({
           terminal.scrollToBottom();
         }
         if (sessionIdRef.current && window.desktopBridge?.terminal) {
-          window.desktopBridge.terminal.resize(sessionIdRef.current, {
+          window.desktopBridge!.terminal.resize(sessionIdRef.current, {
             cols: terminal.cols,
             rows: terminal.rows,
           });
         }
       });
     },
-    []
+    [],
   );
 
   const handleDisconnect = useCallback(() => {
@@ -224,13 +224,13 @@ export function TelnetTerminal({
 
   const subscribeSessionStreams = useCallback(
     (id: string, terminal: XtermTerminal) => {
-      dataDisposerRef.current = window.desktopBridge?.terminal.onData(({ id: incomingId, data }) => {
+  dataDisposerRef.current = window.desktopBridge?.terminal.onData(({ id: incomingId, data }: { id: string; data: string }) => {
         if (incomingId === id) {
           terminal.write(data);
         }
       }) ?? null;
 
-      exitDisposerRef.current = window.desktopBridge?.terminal.onExit(({ id: exitingId }) => {
+  exitDisposerRef.current = window.desktopBridge?.terminal.onExit(({ id: exitingId }: { id: string }) => {
         if (exitingId !== id) {
           return;
         }
@@ -238,7 +238,7 @@ export function TelnetTerminal({
         setStatus("closed");
       }) ?? null;
 
-      errorDisposerRef.current = window.desktopBridge?.terminal.onError(({ id: erroredId, message }) => {
+  errorDisposerRef.current = window.desktopBridge?.terminal.onError(({ id: erroredId, message }: { id: string; message: string }) => {
         if (erroredId !== id) {
           return;
         }
@@ -255,7 +255,7 @@ export function TelnetTerminal({
       return;
     }
 
-    if (!window.desktopBridge?.terminal) {
+  if (!window.desktopBridge?.terminal) {
       setError(dictionary.desktopOnlyHint);
       setStatus("error");
       return;
@@ -326,12 +326,12 @@ export function TelnetTerminal({
       if (mode === "attach" && sessionId) {
         resolvedSessionId = sessionId;
         sessionIdRef.current = sessionId;
-        const attached = await window.desktopBridge.terminal.attach({ id: sessionId, dimensions });
+  const attached = await window.desktopBridge!.terminal.attach({ id: sessionId, dimensions });
         if (!attached) {
           throw new Error(`Unable to attach to existing session ${sessionId}`);
         }
       } else {
-        const { id } = await window.desktopBridge.terminal.createTelnetSession({
+        const { id } = await window.desktopBridge!.terminal.createTelnetSession({
           host,
           port,
           label,
@@ -351,7 +351,7 @@ export function TelnetTerminal({
         if (hasHydratedBufferRef.current) {
           return;
         }
-        const readBuffer = window.desktopBridge?.terminal?.readBuffer;
+  const readBuffer = window.desktopBridge?.terminal?.readBuffer;
         if (!readBuffer) {
           hasHydratedBufferRef.current = true;
           return;
@@ -394,7 +394,25 @@ export function TelnetTerminal({
       setStatus("error");
       await cleanupSession(true);
     }
-  }, [activeTheme, cleanupSession, dictionary.desktopOnlyHint, dictionary.requireIp, dictionary.status.error, host, label, mode, onSessionCreated, port, scheduleFit, sessionId, subscribeSessionStreams]);
+  }, [
+    activeTheme,
+    cleanupSession,
+    dictionary.desktopOnlyHint,
+    dictionary.requireIp,
+    dictionary.status.error,
+    host,
+    label,
+    mode,
+    onSessionCreated,
+    port,
+    scheduleFit,
+    sessionId,
+    subscribeSessionStreams,
+    resolvedFontFamily,
+    terminalSettings.fontSize,
+    terminalSettings.lineHeight,
+    terminalSettings.letterSpacing,
+  ]);
 
   useEffect(() => {
     if (mode === "attach" && sessionId && status === "idle") {
