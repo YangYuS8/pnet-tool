@@ -10,7 +10,7 @@
     "dev:web": "next dev --turbopack",
     "dev:tauri": "tauri dev",
     "build": "pnpm run build:web && tauri build",
-    "build:web": "next build --turbopack",
+    "build:web": "next build",
     "lint": "eslint"
   },
   "dependencies": {

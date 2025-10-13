@@ -7,6 +7,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 env:
   NODE_VERSION: "20"
@@ -48,27 +49,28 @@ jobs:
         run: pnpm run build:web
 
       - name: Build Tauri (AppImage)
-        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
-          releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+        run: |
+          pnpm tauri build
 
       - name: Collect artifacts
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist-artifacts
+          APP_DIR="src-tauri/target/release/bundle/appimage"
+          echo "Looking for artifacts in: $APP_DIR"
+          ls -la "$APP_DIR" || true
           shopt -s nullglob
-          for file in src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/appimage/*.yml; do
+          for file in "$APP_DIR"/*.AppImage "$APP_DIR"/*.AppImage.sig "$APP_DIR"/*.tar.gz "$APP_DIR"/*.tar.gz.sig "$APP_DIR"/*.yml; do
             if [ -f "$file" ]; then
+              echo "Copying $file"
               cp "$file" dist-artifacts/
             fi
           done
-        shell: bash
+          echo "Collected:" && ls -la dist-artifacts
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -99,8 +101,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install WiX Toolset
-        run: choco install wixtoolset --version=3.14.0 -y
+      - name: Ensure WiX Toolset
+        run: |
+          choco upgrade wixtoolset -y --no-progress
         shell: pwsh
 
       - name: Install dependencies
@@ -111,24 +114,25 @@ jobs:
         shell: pwsh
 
       - name: Build Tauri (MSI)
-        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
-          releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+        run: |
+          pnpm tauri build
 
       - name: Collect artifacts
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist-artifacts -Force | Out-Null
-          Get-ChildItem -Path src-tauri/target/release/bundle/msi -Include *.msi,*.yml -File -Recurse | ForEach-Object {
-            Copy-Item $_.FullName dist-artifacts/
+          $msiDir = "src-tauri/target/release/bundle/msi"
+          if (Test-Path $msiDir) {
+            Get-ChildItem -Path $msiDir -Include *.msi,*.yml -File -Recurse | ForEach-Object {
+              Write-Host "Copying $($_.FullName)"
+              Copy-Item $_.FullName dist-artifacts/
+            }
+          } else {
+            Write-Host "MSI directory not found: $msiDir"
           }
-        shell: pwsh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
