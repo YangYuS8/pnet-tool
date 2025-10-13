@@ -1,27 +1,20 @@
 ## 项目概览
 
 PNET Tool 是一个结合 Next.js 15 与 Tauri 2 的桌面端应用，用于对接 PNETLab 模拟器的路由设备命令窗口。界面使用 Tailwind CSS 4 与 shadcn/ui 组件体系，默认亮色主题并支持暗色切换。
-
-当前实现的核心能力：
-
-- Telnet 终端：基于 Tauri 子进程 + `@xterm/xterm`（临时方案），支持自动连接 PNETLab 设备并回传状态；后续可引入 PTY 插件增强交互体验。
 - 会话面板：左侧纵向列表集中展示当前会话，可快速切换、重命名并查看运行状态。
 - 协议唤起：注册 `telnet://` 协议，支持从浏览器点击 PNETLab 拓扑节点后唤起桌面端并自动连接。
 - 配置检测：通过 `/api/pnetlab/health` 探测 PNETLab 连通性并反馈响应时延。
 - 双语界面：支持 `zh-CN` 与 `en` 两种语言，通过 `/[locale]` 路径访问并在客户端即时切换。
 - 桌面壳层：定制化窗口标题栏、主题切换与 IPC 桥接，统一桌面视觉风格。
-- Windows 试验支持：提供 x64 NSIS 安装包与 AppUserModelID 配置，验证 telnet 协议注册链路。
 
 ## 快速开始
 
 安装依赖：
 
 ```bash
-pnpm install
 ```
 
 仅启动 Web 端（调试 UI）：
-
 ```bash
 pnpm dev
 ```

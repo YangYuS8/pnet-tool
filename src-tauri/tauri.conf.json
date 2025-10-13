@@ -19,7 +19,8 @@
     ]
   },
   "bundle": {
-    "icon": ["../build/icons/pnet-tool.png"]
+    "icon": ["../build/icons/pnet-tool.png"],
+    "targets": ["appimage", "msi"]
   },
   "plugins": {}
 }

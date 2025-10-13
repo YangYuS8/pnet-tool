@@ -14,7 +14,7 @@ env:
 
 jobs:
   build-linux:
-    name: Build Linux AppImage
+    name: Build Linux AppImage (Tauri)
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -33,17 +33,37 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build AppImage
-        run: pnpm dist:appimage
+      - name: Build Web
+        run: pnpm run build:web
+
+      - name: Build Tauri (AppImage)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Collect artifacts
         run: |
           mkdir -p dist-artifacts
           shopt -s nullglob
-          for file in release/*.AppImage release/*.yml; do
+          for file in src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/appimage/*.yml; do
             if [ -f "$file" ]; then
               cp "$file" dist-artifacts/
             fi
@@ -57,7 +77,7 @@ jobs:
           path: dist-artifacts
 
   build-windows:
-    name: Build Windows Installer
+    name: Build Windows MSI (Tauri)
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -66,7 +86,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -76,17 +96,36 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install WiX Toolset
+        run: choco install wixtoolset --version=3.14.0 -y
+        shell: pwsh
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Windows installer
-        run: pnpm dist:win
+      - name: Build Web
+        run: pnpm run build:web
         shell: pwsh
+
+      - name: Build Tauri (MSI)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Collect artifacts
         run: |
           New-Item -ItemType Directory -Path dist-artifacts -Force | Out-Null
-          Get-ChildItem -Path release -Include *.exe,*.yml -File -Recurse | ForEach-Object {
+          Get-ChildItem -Path src-tauri/target/release/bundle/msi -Include *.msi,*.yml -File -Recurse | ForEach-Object {
             Copy-Item $_.FullName dist-artifacts/
           }
         shell: pwsh
