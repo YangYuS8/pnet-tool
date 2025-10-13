@@ -106,6 +106,26 @@ jobs:
           choco upgrade wixtoolset -y --no-progress
         shell: pwsh
 
+      - name: Install ImageMagick (for ICO)
+        run: |
+          choco upgrade imagemagick -y --no-progress
+        shell: pwsh
+
+      - name: Prepare Windows icon (ICO)
+        shell: pwsh
+        run: |
+          $png = "build/icons/pnet-tool.png"
+          $icoDir = "src-tauri/icons"
+          $ico = Join-Path $icoDir "icon.ico"
+          if (!(Test-Path $icoDir)) { New-Item -ItemType Directory -Path $icoDir -Force | Out-Null }
+          if (Test-Path $png) {
+            magick convert $png -define icon:auto-resize=16,24,32,48,64,128,256 $ico
+            Write-Host "ICO generated at $ico"
+          } else {
+            Write-Error "PNG icon not found at $png"
+            exit 1
+          }
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
