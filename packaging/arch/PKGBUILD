@@ -8,7 +8,7 @@ arch=('x86_64')
 url="https://github.com/YangYuS8/pnet-tool"
 license=('custom')
 depends=('xdg-utils' 'desktop-file-utils' 'gtk3')
-makedepends=('curl' 'axel' 'bsdtar')
+makedepends=('curl' 'axel' 'libarchive')
 DLAGENTS=('https::/usr/bin/axel -n 8 -o %o %u'
           'http::/usr/bin/axel -n 8 -o %o %u')
 options=('!strip')
