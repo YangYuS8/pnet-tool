@@ -163,11 +163,23 @@ jobs:
           Write-Host "Looking for artifacts in: $msiDir"
           if (Test-Path $msiDir) {
             Get-ChildItem -Path $msiDir -Recurse | Select-Object FullName, Length, LastWriteTime | Format-Table -AutoSize | Out-String | Write-Host
-            $files = Get-ChildItem -Path $msiDir -Include *.msi,*.yml -File -Recurse
-            if ($files.Count -eq 0) { Write-Error "No MSI artifacts found in $msiDir" }
-            foreach ($f in $files) {
-              Write-Host "Copying $($f.FullName)"
-              Copy-Item $f.FullName dist-artifacts/
+            $msiFiles = Get-ChildItem -Path $msiDir -Include *.msi -File -Recurse
+            $otherFiles = Get-ChildItem -Path $msiDir -Include *.yml -File -Recurse
+            if (($msiFiles | Measure-Object).Count -eq 0) { Write-Error "No MSI artifacts found in $msiDir" }
+
+            # Read version from tauri.conf.json to construct unified filename
+            $tauriConf = Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+            $version = $tauriConf.version
+
+            foreach ($msi in $msiFiles) {
+              $targetName = "pnet-tool_${version}_amd64.msi"
+              $dest = Join-Path 'dist-artifacts' $targetName
+              Write-Host "Copying MSI as $targetName from $($msi.FullName)"
+              Copy-Item $msi.FullName $dest -Force
+            }
+            foreach ($f in $otherFiles) {
+              Write-Host "Copying ancillary artifact $($f.Name)"
+              Copy-Item $f.FullName 'dist-artifacts/' -Force
             }
           } else {
             Write-Error "MSI directory not found: $msiDir"
