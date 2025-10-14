@@ -16,6 +16,7 @@
     "build:msi": "pnpm run build:web && tauri build --bundles msi",
     "build:binary": "pnpm run build:web && tauri build --bundles none",
     "install:linux": "bash ./scripts/install-linux.sh",
+    "check:appimage-deps": "bash ./scripts/check-appimage-deps.sh",
     "lint": "eslint"
   },
   "dependencies": {
