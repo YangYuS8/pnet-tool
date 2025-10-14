@@ -15,7 +15,7 @@ env:
 
 jobs:
   build-linux:
-    name: Build Linux AppImage (Tauri)
+    name: Build Linux Portable (binary + installer)
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,36 +48,28 @@ jobs:
       - name: Build Web
         run: pnpm run build:web
 
-      - name: Build Tauri (AppImage)
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Build Tauri (binary only)
         run: |
-          pnpm tauri build
+          pnpm run build:binary
 
-      - name: Collect artifacts
+      - name: Package portable tar.gz
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist-artifacts
-          APP_DIR="src-tauri/target/release/bundle/appimage"
-          echo "Looking for artifacts in: $APP_DIR"
-          if [ -d "$APP_DIR" ]; then ls -la "$APP_DIR"; else echo "Directory not found: $APP_DIR"; fi
-          shopt -s nullglob
-          copied=0
-          for file in "$APP_DIR"/*.AppImage "$APP_DIR"/*.AppImage.sig "$APP_DIR"/*.tar.gz "$APP_DIR"/*.tar.gz.sig "$APP_DIR"/*.yml; do
-            if [ -f "$file" ]; then
-              echo "Copying $file"
-              cp "$file" dist-artifacts/
-              copied=$((copied+1))
-            fi
-          done
-          if [ "$copied" -eq 0 ]; then
-            echo "No artifacts found, dumping bundle directory for debugging:"
-            ls -R src-tauri/target/release/bundle || true
-            exit 1
-          fi
-          echo "Collected:" && ls -la dist-artifacts
+          BIN="src-tauri/target/release/pnet-tool"
+          test -x "$BIN" || { echo "Binary not found: $BIN"; exit 1; }
+          VERSION="${GITHUB_REF_NAME#v}"
+          NAME="pnet-tool-${VERSION}-linux-x64"
+          STAGE="stage-$NAME"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp "$BIN" "$STAGE/"
+          cp -f build/icons/pnet-tool.png "$STAGE/" 2>/dev/null || true
+          cp -f scripts/install-linux-portable.sh "$STAGE/install.sh"
+          chmod +x "$STAGE/install.sh" "$STAGE/pnet-tool"
+          tar -C "$STAGE" -czf "dist-artifacts/$NAME.tar.gz" .
+          echo "Created dist-artifacts/$NAME.tar.gz"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -87,7 +79,7 @@ jobs:
           if-no-files-found: error
 
   build-windows:
-    name: Build Windows MSI (Tauri)
+    name: Build Windows Portable (binary + installer)
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -141,35 +133,27 @@ jobs:
         run: pnpm run build:web
         shell: pwsh
 
-      - name: Build Tauri (MSI)
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Build Tauri (binary only)
         run: |
-          pnpm tauri build
+          pnpm run build:binary
 
-      - name: Collect artifacts
+      - name: Package portable zip
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Path dist-artifacts -Force | Out-Null
-          $msiDir = "src-tauri/target/release/bundle/msi"
-          Write-Host "Looking for artifacts in: $msiDir"
-          if (Test-Path $msiDir) {
-            Get-ChildItem -Path $msiDir -Recurse | Select-Object FullName, Length, LastWriteTime | Format-Table -AutoSize | Out-String | Write-Host
-            $files = Get-ChildItem -Path $msiDir -Include *.msi,*.yml -File -Recurse
-            if ($files.Count -eq 0) {
-              Write-Host "No artifacts found. Dumping bundle directory:"
-              Get-ChildItem -Path src-tauri/target/release/bundle -Recurse | Select-Object FullName | Format-Table -AutoSize | Out-String | Write-Host
-              exit 1
-            }
-            foreach ($f in $files) {
-              Write-Host "Copying $($f.FullName)"
-              Copy-Item $f.FullName dist-artifacts/
-            }
-          } else {
-            Write-Host "MSI directory not found: $msiDir"
-            exit 1
-          }
+          $bin = "src-tauri/target/release/pnet-tool.exe"
+          if (!(Test-Path $bin)) { Write-Error "Binary not found: $bin" }
+          $Version = "$env:GITHUB_REF_NAME".TrimStart('v')
+          $Name = "pnet-tool-$Version-windows-x64"
+          $Stage = "stage-$Name"
+          if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
+          New-Item -ItemType Directory -Path $Stage | Out-Null
+          Copy-Item $bin (Join-Path $Stage 'pnet-tool.exe')
+          if (Test-Path 'build/icons/pnet-tool.png') { Copy-Item 'build/icons/pnet-tool.png' (Join-Path $Stage 'pnet-tool.png') }
+          Copy-Item 'scripts/install-windows-portable.ps1' (Join-Path $Stage 'install.ps1')
+          Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path 'dist-artifacts' "$Name.zip") -Force
+          Write-Host "Created dist-artifacts/$Name.zip"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
