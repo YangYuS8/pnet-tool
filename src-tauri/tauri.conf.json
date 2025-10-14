@@ -19,7 +19,7 @@
     ]
   },
   "bundle": {
-    "icon": ["../build/icons/pnet-tool.png"],
+    "icon": ["./icons/icon.ico"],
     "targets": ["deb", "msi"]
   },
   "plugins": {}
