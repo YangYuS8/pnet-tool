@@ -48,6 +48,18 @@ jobs:
       - name: Build Web
         run: pnpm run build:web
 
+      - name: Prepare Linux icon (PNG)
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/icons
+          if [ -f build/icons/pnet-tool.png ]; then
+            cp -f build/icons/pnet-tool.png src-tauri/icons/icon.png
+            echo "Prepared src-tauri/icons/icon.png"
+          else
+            echo "build/icons/pnet-tool.png not found" >&2
+            exit 1
+          fi
+
       - name: Build Tauri (DEB)
         run: |
           pnpm run build:web
