@@ -12,6 +12,7 @@
     "build": "pnpm run build:web && tauri build",
     "build:web": "next build",
     "build:appimage": "pnpm run build:web && tauri build --bundles appimage",
+  "build:deb": "pnpm run build:web && tauri build --bundles deb",
     "build:msi": "pnpm run build:web && tauri build --bundles msi",
     "build:binary": "pnpm run build:web && tauri build --bundles none",
     "install:linux": "bash ./scripts/install-linux.sh",

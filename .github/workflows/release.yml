@@ -15,7 +15,7 @@ env:
 
 jobs:
   build-linux:
-    name: Build Linux Portable (binary + installer)
+    name: Build Linux DEB (Tauri)
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,28 +48,33 @@ jobs:
       - name: Build Web
         run: pnpm run build:web
 
-      - name: Build Tauri (binary only)
+      - name: Build Tauri (DEB)
         run: |
-          pnpm run build:binary
+          pnpm run build:web
+          pnpm exec tauri build --bundles deb
 
-      - name: Package portable tar.gz
+      - name: Collect DEB artifact
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist-artifacts
-          BIN="src-tauri/target/release/pnet-tool"
-          test -x "$BIN" || { echo "Binary not found: $BIN"; exit 1; }
-          VERSION="${GITHUB_REF_NAME#v}"
-          NAME="pnet-tool-${VERSION}-linux-x64"
-          STAGE="stage-$NAME"
-          rm -rf "$STAGE"
-          mkdir -p "$STAGE"
-          cp "$BIN" "$STAGE/"
-          cp -f build/icons/pnet-tool.png "$STAGE/" 2>/dev/null || true
-          cp -f scripts/install-linux-portable.sh "$STAGE/install.sh"
-          chmod +x "$STAGE/install.sh" "$STAGE/pnet-tool"
-          tar -C "$STAGE" -czf "dist-artifacts/$NAME.tar.gz" .
-          echo "Created dist-artifacts/$NAME.tar.gz"
+          DEB_DIR="src-tauri/target/release/bundle/deb"
+          echo "Looking for artifacts in: $DEB_DIR"
+          if [ -d "$DEB_DIR" ]; then ls -la "$DEB_DIR"; else echo "Directory not found: $DEB_DIR"; fi
+          shopt -s nullglob
+          copied=0
+          for file in "$DEB_DIR"/*.deb; do
+            if [ -f "$file" ]; then
+              echo "Copying $file"
+              cp "$file" dist-artifacts/
+              copied=$((copied+1))
+            fi
+          done
+          if [ "$copied" -eq 0 ]; then
+            echo "No DEB artifacts found. Dump bundle directory:" && ls -R src-tauri/target/release/bundle || true
+            exit 1
+          fi
+          echo "Collected:" && ls -la dist-artifacts
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
