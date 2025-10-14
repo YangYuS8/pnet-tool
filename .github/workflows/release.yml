@@ -62,14 +62,21 @@ jobs:
           mkdir -p dist-artifacts
           APP_DIR="src-tauri/target/release/bundle/appimage"
           echo "Looking for artifacts in: $APP_DIR"
-          ls -la "$APP_DIR" || true
+          if [ -d "$APP_DIR" ]; then ls -la "$APP_DIR"; else echo "Directory not found: $APP_DIR"; fi
           shopt -s nullglob
+          copied=0
           for file in "$APP_DIR"/*.AppImage "$APP_DIR"/*.AppImage.sig "$APP_DIR"/*.tar.gz "$APP_DIR"/*.tar.gz.sig "$APP_DIR"/*.yml; do
             if [ -f "$file" ]; then
               echo "Copying $file"
               cp "$file" dist-artifacts/
+              copied=$((copied+1))
             fi
           done
+          if [ "$copied" -eq 0 ]; then
+            echo "No artifacts found, dumping bundle directory for debugging:"
+            ls -R src-tauri/target/release/bundle || true
+            exit 1
+          fi
           echo "Collected:" && ls -la dist-artifacts
 
       - name: Upload artifacts
@@ -77,6 +84,7 @@ jobs:
         with:
           name: build-linux
           path: dist-artifacts
+          if-no-files-found: error
 
   build-windows:
     name: Build Windows MSI (Tauri)
@@ -145,13 +153,22 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path dist-artifacts -Force | Out-Null
           $msiDir = "src-tauri/target/release/bundle/msi"
+          Write-Host "Looking for artifacts in: $msiDir"
           if (Test-Path $msiDir) {
-            Get-ChildItem -Path $msiDir -Include *.msi,*.yml -File -Recurse | ForEach-Object {
-              Write-Host "Copying $($_.FullName)"
-              Copy-Item $_.FullName dist-artifacts/
+            Get-ChildItem -Path $msiDir -Recurse | Select-Object FullName, Length, LastWriteTime | Format-Table -AutoSize | Out-String | Write-Host
+            $files = Get-ChildItem -Path $msiDir -Include *.msi,*.yml -File -Recurse
+            if ($files.Count -eq 0) {
+              Write-Host "No artifacts found. Dumping bundle directory:"
+              Get-ChildItem -Path src-tauri/target/release/bundle -Recurse | Select-Object FullName | Format-Table -AutoSize | Out-String | Write-Host
+              exit 1
+            }
+            foreach ($f in $files) {
+              Write-Host "Copying $($f.FullName)"
+              Copy-Item $f.FullName dist-artifacts/
             }
           } else {
             Write-Host "MSI directory not found: $msiDir"
+            exit 1
           }
 
       - name: Upload artifacts
@@ -159,6 +176,7 @@ jobs:
         with:
           name: build-windows
           path: dist-artifacts
+          if-no-files-found: error
 
   release:
     name: Publish Release

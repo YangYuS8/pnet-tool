@@ -12,7 +12,6 @@
     "build": "pnpm run build:web && tauri build",
     "build:web": "next build",
     "build:appimage": "pnpm run build:web && tauri build --bundles appimage",
-  "build:appimage:local": "cross-env APPIMAGE_EXTRACT_AND_RUN=1 pnpm run build:web && tauri build --bundles appimage",
     "build:msi": "pnpm run build:web && tauri build --bundles msi",
     "build:binary": "pnpm run build:web && tauri build --bundles none",
     "install:linux": "bash ./scripts/install-linux.sh",
