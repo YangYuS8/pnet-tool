@@ -25,7 +25,13 @@ package() {
   # extract deb
   mkdir -p "$srcdir/deb-extract"
   bsdtar -xvf "$srcdir/pnet-tool_${pkgver}_amd64.deb" -C "$srcdir/deb-extract"
-  bsdtar -xvf "$srcdir/deb-extract/data.tar.*" -C "$srcdir/deb-extract"
+  local data_tar
+  data_tar=$(ls "$srcdir/deb-extract"/data.tar.* 2>/dev/null | head -n1)
+  if [[ -z "$data_tar" ]]; then
+    echo "data.tar.* not found under $srcdir/deb-extract" >&2
+    return 1
+  fi
+  bsdtar -xvf "$data_tar" -C "$srcdir/deb-extract"
 
   # install files from deb layout
   cp -dr --no-preserve=ownership "$srcdir/deb-extract/usr" "$pkgdir/"
