@@ -84,7 +84,7 @@ jobs:
           if-no-files-found: error
 
   build-windows:
-    name: Build Windows Portable (binary + installer)
+    name: Build Windows MSI (Tauri)
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -138,27 +138,28 @@ jobs:
         run: pnpm run build:web
         shell: pwsh
 
-      - name: Build Tauri (binary only)
+      - name: Build Tauri (MSI)
         run: |
-          pnpm run build:binary
+          pnpm exec tauri build --bundles msi
 
-      - name: Package portable zip
+      - name: Collect MSI artifacts
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Path dist-artifacts -Force | Out-Null
-          $bin = "src-tauri/target/release/pnet-tool.exe"
-          if (!(Test-Path $bin)) { Write-Error "Binary not found: $bin" }
-          $Version = "$env:GITHUB_REF_NAME".TrimStart('v')
-          $Name = "pnet-tool-$Version-windows-x64"
-          $Stage = "stage-$Name"
-          if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
-          New-Item -ItemType Directory -Path $Stage | Out-Null
-          Copy-Item $bin (Join-Path $Stage 'pnet-tool.exe')
-          if (Test-Path 'build/icons/pnet-tool.png') { Copy-Item 'build/icons/pnet-tool.png' (Join-Path $Stage 'pnet-tool.png') }
-          Copy-Item 'scripts/install-windows-portable.ps1' (Join-Path $Stage 'install.ps1')
-          Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path 'dist-artifacts' "$Name.zip") -Force
-          Write-Host "Created dist-artifacts/$Name.zip"
+          $msiDir = "src-tauri/target/release/bundle/msi"
+          Write-Host "Looking for artifacts in: $msiDir"
+          if (Test-Path $msiDir) {
+            Get-ChildItem -Path $msiDir -Recurse | Select-Object FullName, Length, LastWriteTime | Format-Table -AutoSize | Out-String | Write-Host
+            $files = Get-ChildItem -Path $msiDir -Include *.msi,*.yml -File -Recurse
+            if ($files.Count -eq 0) { Write-Error "No MSI artifacts found in $msiDir" }
+            foreach ($f in $files) {
+              Write-Host "Copying $($f.FullName)"
+              Copy-Item $f.FullName dist-artifacts/
+            }
+          } else {
+            Write-Error "MSI directory not found: $msiDir"
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

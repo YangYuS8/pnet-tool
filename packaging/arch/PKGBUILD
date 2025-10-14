@@ -1,19 +1,19 @@
 # Maintainer: YangYuS8 <https://github.com/YangYuS8>
 
 pkgname=pnet-tool
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
-pkgdesc="PNETLab 定制的 Telnet 客户端（Electron AppImage 形式）"
+pkgdesc="PNETLab 定制的 Telnet 客户端（Tauri deb 发行产物复用）"
 arch=('x86_64')
 url="https://github.com/YangYuS8/pnet-tool"
 license=('custom')
-depends=('fuse2' 'xdg-utils' 'desktop-file-utils' 'gtk3')
-makedepends=('curl' 'axel')
+depends=('xdg-utils' 'desktop-file-utils' 'gtk3')
+makedepends=('curl' 'axel' 'bsdtar')
 DLAGENTS=('https::/usr/bin/axel -n 8 -o %o %u'
           'http::/usr/bin/axel -n 8 -o %o %u')
 options=('!strip')
 source=(
-  "pnet-tool-${pkgver}.AppImage::https://github.com/YangYuS8/pnet-tool/releases/download/v${pkgver}/pnet-tool-${pkgver}.AppImage"
+  "pnet-tool_${pkgver}_amd64.deb::https://github.com/YangYuS8/pnet-tool/releases/download/v${pkgver}/pnet-tool_${pkgver}_amd64.deb"
   "pnet-tool.desktop"
   "pnet-tool.sh"
   "pnet-tool.svg"
@@ -22,7 +22,16 @@ sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
 install=pnet-tool.install
 
 package() {
-  install -Dm755 "$srcdir/pnet-tool-${pkgver}.AppImage" "$pkgdir/opt/pnet-tool/pnet-tool.AppImage"
+  # extract deb
+  mkdir -p "$srcdir/deb-extract"
+  bsdtar -xvf "$srcdir/pnet-tool_${pkgver}_amd64.deb" -C "$srcdir/deb-extract"
+  bsdtar -xvf "$srcdir/deb-extract/data.tar.*" -C "$srcdir/deb-extract"
+
+  # install files from deb layout
+  cp -dr --no-preserve=ownership "$srcdir/deb-extract/usr" "$pkgdir/"
+  cp -dr --no-preserve=ownership "$srcdir/deb-extract/opt" "$pkgdir/" 2>/dev/null || true
+
+  # ensure wrapper, desktop and icon exist (override with repo versions if provided)
   install -Dm755 "$srcdir/pnet-tool.sh" "$pkgdir/usr/bin/pnet-tool"
   install -Dm644 "$srcdir/pnet-tool.desktop" "$pkgdir/usr/share/applications/pnet-tool.desktop"
   install -Dm644 "$srcdir/pnet-tool.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/pnet-tool.svg"
