@@ -72,9 +72,9 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
           (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs!.set(id, child);
           return { id };
         },
-        write(id: string, data: string) {
+        write(id: string, _data: string) {
           try {
-            const proc = (window as { __pnetProcs?: Map<string, any> }).__pnetProcs?.get(id);
+            const proc = (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs?.get(id);
             if (!proc) return;
             // Fallback approach: send data via a platform shell write. Not fully supported without PTY.
             // This is a no-op placeholder as plugin-shell doesn't expose stdin piping in simple mode.
