@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "shell",
+  "description": "Shell permissions for telnet spawning",
+  "permissions": [
+    "allow-spawn",
+    "allow-kill",
+    "allow-stdin-write"
+  ]
+}

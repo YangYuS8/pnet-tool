@@ -1,0 +1,22 @@
+{
+  "identifier": "shell-telnet",
+  "description": "Allow spawning the telnet client and basic control (stdin/kill) on the main window only",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "process:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        { "name": "telnet", "cmd": "telnet", "args": true }
+      ]
+    },
+    {
+      "identifier": "shell:allow-stdin-write",
+      "allow": [
+        { "name": "telnet", "cmd": "telnet", "args": true }
+      ]
+    },
+    "shell:allow-kill"
+  ]
+}

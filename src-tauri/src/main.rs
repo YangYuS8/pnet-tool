@@ -68,7 +68,7 @@ fn main() {
             guard.extend(new_actions.clone());
           }
         }
-  let _ = app.emit("telnet://requests", &new_actions);
+        let _ = app.emit("telnet://requests", &new_actions);
       }
     }))
     .setup(move |app| {

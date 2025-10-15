@@ -12,6 +12,7 @@ import type { TelnetAction } from "@/types/desktop-bridge";
 import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Command, type TerminatedPayload } from "@tauri-apps/plugin-shell";
+import type { Child } from "@tauri-apps/plugin-shell";
 
 // Minimal settings storage using localStorage as a placeholder
 const SETTINGS_KEY = "pnet-tool:settings";
@@ -49,14 +50,15 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
   async createTelnetSession({ host, port }: { host: string; port?: number }) {
           // Fallback: spawn telnet as a child process (no PTY), stream lines via stdout
           const isWin = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
-          const bin = isWin ? "cmd" : "sh";
-          const args = isWin ? ["/c", "telnet", host, String(port ?? 23)] : ["-lc", `telnet ${host} ${port ?? 23}`];
+          // call telnet directly to match the shell scope whitelist
+          const bin = "telnet";
+          const args = [host, String(port ?? 23)];
           const cmd = await Command.create(bin, args);
           // Attempt to enable stdin piping if available (plugin-shell simple mode may not support it)
           // Attach listeners before spawn to avoid missing early output
           const toText = (data: string | Uint8Array) => (typeof data === "string" ? data : new TextDecoder().decode(data));
           const id = Math.random().toString(36).slice(2);
-          (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs = (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs || new Map<string, unknown>();
+          (window as { __pnetProcs?: Map<string, Child> }).__pnetProcs = (window as { __pnetProcs?: Map<string, Child> }).__pnetProcs || new Map<string, Child>();
           cmd.stdout.on("data", (data: string | Uint8Array) => {
             window.dispatchEvent(new CustomEvent<TerminalDataPayload>("terminal:data", { detail: { id, data: toText(data) } }));
           });
@@ -66,27 +68,26 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
           cmd.on("close", (payload: TerminatedPayload) => {
             const { code, signal } = payload ?? { code: null, signal: null };
             window.dispatchEvent(new CustomEvent<TerminalExitPayload>("terminal:exit", { detail: { id, exitCode: code, signal } }));
-            (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs?.delete(id);
+            (window as { __pnetProcs?: Map<string, Child> }).__pnetProcs?.delete(id);
           });
           const child = await cmd.spawn();
-          (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs!.set(id, child);
+          (window as { __pnetProcs?: Map<string, Child> }).__pnetProcs!.set(id, child);
           return { id };
         },
-        write(id: string, _data: string) {
+        write(id: string, data: string) {
           try {
-            const proc = (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs?.get(id);
+            const proc = (window as { __pnetProcs?: Map<string, Child> }).__pnetProcs?.get(id);
             if (!proc) return;
-            // Fallback approach: send data via a platform shell write. Not fully supported without PTY.
-            // This is a no-op placeholder as plugin-shell doesn't expose stdin piping in simple mode.
+            void proc.write(data);
           } catch (e) {
             console.warn("write() not supported in current telnet mode", e);
           }
         },
         resize() {},
         async dispose(id: string) {
-          const proc = (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs?.get(id) as { kill?: () => Promise<void> } | undefined;
-          try { await proc?.kill?.(); } catch {}
-          (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs?.delete(id);
+          const proc = (window as { __pnetProcs?: Map<string, Child> }).__pnetProcs?.get(id);
+          try { await proc?.kill(); } catch {}
+          (window as { __pnetProcs?: Map<string, Child> }).__pnetProcs?.delete(id);
           return true;
         },
         sendSignal() {},
