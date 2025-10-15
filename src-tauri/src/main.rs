@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, Manager, State, Url};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +33,7 @@ fn parse_telnet_url(url: &str) -> Option<TelnetLaunchRequest> {
     // try to coerce
     work = format!("telnet://{}", work);
   }
-  let parsed = url::Url::parse(&work).ok()?;
+  let parsed = Url::parse(&work).ok()?;
   let host = parsed.host_str()?.to_string();
   let port = parsed.port();
   Some(TelnetLaunchRequest { host, port, label: None })
@@ -68,7 +68,7 @@ fn main() {
             guard.extend(new_actions.clone());
           }
         }
-        let _ = app.emit_all("telnet://requests", &new_actions);
+  let _ = app.emit("telnet://requests", &new_actions);
       }
     }))
     .setup(move |app| {
