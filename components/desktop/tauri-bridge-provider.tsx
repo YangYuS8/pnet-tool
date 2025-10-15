@@ -7,6 +7,7 @@ import type {
   TerminalDataPayload,
   TerminalExitPayload,
 } from "@/types/desktop-bridge";
+import type { TelnetAction } from "@/types/desktop-bridge";
 // These imports resolve only in Tauri runtime builds; in plain web they are unused.
 import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -44,13 +45,14 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
           return false;
         }
       },
-      terminal: {
+    terminal: {
   async createTelnetSession({ host, port }: { host: string; port?: number }) {
           // Fallback: spawn telnet as a child process (no PTY), stream lines via stdout
           const isWin = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
           const bin = isWin ? "cmd" : "sh";
           const args = isWin ? ["/c", "telnet", host, String(port ?? 23)] : ["-lc", `telnet ${host} ${port ?? 23}`];
           const cmd = await Command.create(bin, args);
+          // Attempt to enable stdin piping if available (plugin-shell simple mode may not support it)
           // Attach listeners before spawn to avoid missing early output
           const toText = (data: string | Uint8Array) => (typeof data === "string" ? data : new TextDecoder().decode(data));
           const id = Math.random().toString(36).slice(2);
@@ -70,7 +72,16 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
           (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs!.set(id, child);
           return { id };
         },
-        write() {},
+        write(id: string, data: string) {
+          try {
+            const proc = (window as { __pnetProcs?: Map<string, any> }).__pnetProcs?.get(id);
+            if (!proc) return;
+            // Fallback approach: send data via a platform shell write. Not fully supported without PTY.
+            // This is a no-op placeholder as plugin-shell doesn't expose stdin piping in simple mode.
+          } catch (e) {
+            console.warn("write() not supported in current telnet mode", e);
+          }
+        },
         resize() {},
         async dispose(id: string) {
           const proc = (window as { __pnetProcs?: Map<string, unknown> }).__pnetProcs?.get(id) as { kill?: () => Promise<void> } | undefined;
@@ -141,6 +152,27 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
           s.recentConnections = [];
           setSettings(s);
           return { ok: true, updated: true, connections: [] };
+        }
+      }
+      ,
+      telnet: {
+        async ready() {
+          try {
+            const actions = await invoke<TelnetAction[]>("consume_pending_telnet_actions");
+            return Array.isArray(actions) ? actions : [];
+          } catch {
+            return [];
+          }
+        },
+        onRequests(callback: (payload: TelnetAction[]) => void) {
+          const handler = (ev: Event) => {
+            const arr = (ev as CustomEvent<TelnetAction[]>).detail;
+            if (Array.isArray(arr) && arr.length > 0) {
+              callback(arr);
+            }
+          };
+          window.addEventListener("telnet://requests", handler as EventListener);
+          return () => window.removeEventListener("telnet://requests", handler as EventListener);
         }
       }
     } as unknown as DesktopBridge;
