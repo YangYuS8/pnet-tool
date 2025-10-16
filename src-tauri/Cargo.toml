@@ -11,6 +11,9 @@ tauri = { version = "2.0.0", features = ["tray-icon", "devtools"] }
 tauri-plugin-process = { version = "2.0.0" }
 tauri-plugin-shell = { version = "2.0.0" }
 tauri-plugin-single-instance = { version = "2.0.0" }
+portable-pty = "0.8"
+once_cell = "1.19"
+nanoid = "0.4"
 
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }

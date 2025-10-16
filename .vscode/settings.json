@@ -1,0 +1,22 @@
+{
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.git/**": true,
+    "**/.next/**": true,
+    "**/out/**": true,
+    "**/build/**": true,
+    "**/dist-electron/**": true,
+    "**/src-tauri/target/**": true,
+    "**/release/**": true
+  },
+  "search.exclude": {
+    "**/node_modules/**": true,
+    "**/.git/**": true,
+    "**/.next/**": true,
+    "**/out/**": true,
+    "**/build/**": true,
+    "**/dist-electron/**": true,
+    "**/src-tauri/target/**": true,
+    "**/release/**": true
+  }
+}

@@ -20,6 +20,8 @@
 # production
 /dist-electron
 /release
+build/
+dist/
 
 # misc
 .DS_Store
@@ -42,3 +44,5 @@ yarn-error.log*
 next-env.d.ts
 
 src-tauri/target
+public/.vite/
+**/*.log
