@@ -130,7 +130,15 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
         };
       },
       onError() { return () => {}; },
-      onLabel() { return () => {}; },
+      onLabel(callback?: (payload: { id: string; label?: string; host?: string; port?: number }) => void) {
+        if (typeof window === "undefined") return () => {};
+        const handler = (ev: Event) => {
+          const detail = (ev as CustomEvent<{ id: string; label?: string; host?: string; port?: number }>).detail;
+          if (callback && detail) callback(detail);
+        };
+        window.addEventListener("terminal:label", handler as EventListener);
+        return () => window.removeEventListener("terminal:label", handler as EventListener);
+      },
     },
       pnetlab: {
         async checkHealth({ ip, port }: { ip: string; port?: number }) {
@@ -208,6 +216,7 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
     // Bridge Tauri events from Rust PTY to our unified terminal events
     let unlistenData: UnlistenFn | null = null;
     let unlistenExit: UnlistenFn | null = null;
+    let unlistenTelnet: UnlistenFn | null = null;
     void listen<{ id: string; data: string }>("pty://data", ({ payload }) => {
       window.dispatchEvent(
         new CustomEvent<TerminalDataPayload>("terminal:data", { detail: { id: payload.id, data: payload.data } })
@@ -219,9 +228,15 @@ export function TauriBridgeProvider({ children }: { children: React.ReactNode })
       );
     }).then((fn) => (unlistenExit = fn));
 
+    // Bridge deep link telnet requests from Rust to window event for HomePage
+    void listen<import("@/types/desktop-bridge").TelnetAction[]>("telnet://requests", ({ payload }) => {
+      window.dispatchEvent(new CustomEvent<import("@/types/desktop-bridge").TelnetAction[]>("telnet://requests", { detail: payload }));
+    }).then((fn) => (unlistenTelnet = fn));
+
     return () => {
       try { unlistenData?.(); } catch {}
       try { unlistenExit?.(); } catch {}
+      try { unlistenTelnet?.(); } catch {}
     };
   }, []);
 

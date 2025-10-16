@@ -53,8 +53,8 @@ type ManagedSession = {
 
 const RECENT_CONNECTION_LIMIT = 12;
 const LOCAL_RECENTS_STORAGE_KEY = "pnet:recent-connections:v1";
-const SESSION_STORAGE_KEY = "pnet:active-terminal-sessions:v1";
-const SESSION_ACTIVE_STORAGE_KEY = "pnet:active-terminal-session-key:v1";
+const SESSION_STORAGE_KEY = "pnet:active-terminal-sessions:v2";
+const SESSION_ACTIVE_STORAGE_KEY = "pnet:active-terminal-session-key:v2";
 
 type RecentConnectionRecord = {
   host: string;
@@ -155,6 +155,7 @@ export function HomePage() {
   const [sessions, setSessions] = useState<ManagedSession[]>([]);
   const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [showWorkbench, setShowWorkbench] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [recentConnections, setRecentConnections] = useState<RecentConnectionRecord[]>(() => {
     if (typeof window === "undefined") {
@@ -290,48 +291,39 @@ export function HomePage() {
     sessionsRef.current = sessions;
   }, [sessions]);
 
+  // 从 localStorage 恢复上次的会话标签与参数（不恢复运行中的 PTY id）
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+    if (typeof window === "undefined") return;
     try {
-      const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-      if (!raw) {
-        return;
-      }
-      const parsed = JSON.parse(raw) as Array<Partial<PersistedSessionSnapshot>>;
-      if (!Array.isArray(parsed)) {
-        return;
-      }
-      const snapshots = parsed
-        .map(sanitizePersistedSessionSnapshot)
-        .filter((entry): entry is PersistedSessionSnapshot => Boolean(entry));
-      if (snapshots.length === 0) {
-        return;
-      }
-
-      setSessions((prev) => {
-        if (prev.length > 0) {
-          return prev;
+      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Array<Partial<PersistedSessionSnapshot>>;
+        const snapshots = Array.isArray(parsed)
+          ? parsed
+              .map(sanitizePersistedSessionSnapshot)
+              .filter((v): v is PersistedSessionSnapshot => Boolean(v))
+          : [];
+        if (snapshots.length > 0) {
+          setSessions(
+            snapshots.map((s) => ({
+              key: s.key,
+              sessionId: undefined,
+              host: s.host,
+              port: s.port,
+              label: s.label,
+              autoConnectToken: generateAutoToken(),
+              status: "idle",
+              error: null,
+            }))
+          );
         }
-        return snapshots.map((snapshot) => ({
-          key: snapshot.key,
-          sessionId: snapshot.sessionId,
-          host: snapshot.host,
-          port: snapshot.port,
-          label: snapshot.label,
-          autoConnectToken: generateAutoToken(),
-          status: "idle",
-          error: null,
-        }));
-      });
-
-      const storedActive = window.sessionStorage.getItem(SESSION_ACTIVE_STORAGE_KEY);
-      if (storedActive && snapshots.some((snapshot) => snapshot.key === storedActive)) {
-        setActiveSessionKey((prev) => prev ?? storedActive);
+        const storedActive = window.localStorage.getItem(SESSION_ACTIVE_STORAGE_KEY);
+        if (storedActive && snapshots.some((snapshot) => snapshot.key === storedActive)) {
+          setActiveSessionKey((prev) => prev ?? storedActive);
+        }
       }
-    } catch (error) {
-      console.warn("Failed to restore terminal sessions from storage", error);
+    } catch (e) {
+      console.warn("Failed to restore sessions", e);
     }
   }, [generateAutoToken]);
 
@@ -381,26 +373,18 @@ export function HomePage() {
       return;
     }
     try {
-      const snapshots = sessions
-        .filter((session) => Boolean(session.sessionId))
-        .map((session) => ({
-          key: session.key,
-          sessionId: session.sessionId as string,
-          host: session.host,
-          port: session.port,
-          label: session.label,
-        }));
-
-      if (snapshots.length > 0) {
-        window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(snapshots));
+      const snapshots = sessions.map((session) => ({
+        key: session.key,
+        sessionId: session.sessionId ?? "",
+        host: session.host,
+        port: session.port,
+        label: session.label,
+      }));
+      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(snapshots));
+      if (activeSessionKey) {
+        window.localStorage.setItem(SESSION_ACTIVE_STORAGE_KEY, activeSessionKey);
       } else {
-        window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
-      }
-
-      if (activeSessionKey && snapshots.some((snapshot) => snapshot.key === activeSessionKey)) {
-        window.sessionStorage.setItem(SESSION_ACTIVE_STORAGE_KEY, activeSessionKey);
-      } else {
-        window.sessionStorage.removeItem(SESSION_ACTIVE_STORAGE_KEY);
+        window.localStorage.removeItem(SESSION_ACTIVE_STORAGE_KEY);
       }
     } catch (error) {
       console.warn("Failed to persist terminal sessions", error);
@@ -708,121 +692,91 @@ export function HomePage() {
         isDesktop && "h-full min-h-0"
       )}
     >
-      <aside className="hidden w-[320px] border-r bg-card/60 backdrop-blur lg:flex lg:flex-col">
-        <div className="space-y-2 border-b px-6 py-6">
-          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            <RadioTower className="h-4 w-4" /> {dictionary.navigation.brand}
+      {/* 可折叠侧面板：连接工作台（不改变主区域占比，采用覆盖式抽屉） */}
+      {showWorkbench && (
+        <div className="fixed left-0 top-16 bottom-0 z-40 w-[320px] border-r bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-xl">
+          <div className="space-y-2 border-b px-6 py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <RadioTower className="h-4 w-4" /> {dictionary.navigation.brand}
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setShowWorkbench(false)}>✕</Button>
+            </div>
+            <p className="text-2xl font-semibold">{dictionary.sidebar.title}</p>
+            <p className="text-sm text-muted-foreground">{dictionary.sidebar.description}</p>
           </div>
-          <p className="text-2xl font-semibold">{dictionary.sidebar.title}</p>
-          <p className="text-sm text-muted-foreground">
-            {dictionary.sidebar.description}
-          </p>
-        </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-          <section className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                {dictionary.sidebar.quickConnectTitle}
-              </p>
-            </div>
-            <form className="grid gap-4" onSubmit={handleQuickConnect}>
-              <div className="grid gap-2">
-                <Label htmlFor="pnet-ip">{dictionary.sidebar.ipLabel}</Label>
-                <Input
-                  id="pnet-ip"
-                  placeholder={dictionary.sidebar.ipPlaceholder}
-                  value={ip}
-                  onChange={(event) => setIp(event.target.value)}
-                />
+          <div className="flex h-[calc(100%-6rem)] flex-col space-y-6 overflow-y-auto px-6 py-6">
+            <section className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">{dictionary.sidebar.quickConnectTitle}</p>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="pnet-port">{dictionary.sidebar.portLabel}</Label>
-                <Input
-                  id="pnet-port"
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  max={65535}
-                  value={port}
-                  onChange={(event) =>
-                    setPort(sanitizePortValue(event.target.value))
-                  }
-                />
-              </div>
-              <Button type="submit">{dictionary.sidebar.connectButton}</Button>
-            </form>
-            {formError ? (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                <Info className="mt-0.5 h-4 w-4" />
-                <span>{formError}</span>
-              </div>
-            ) : null}
-            <div className="space-y-3 rounded-xl border border-border/60 bg-background/70 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-foreground/80">
-                  {dictionary.sidebar.recentTitle}
-                </p>
-                {recentConnections.length > 0 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 text-xs text-muted-foreground"
-                    onClick={() => {
-                      void handleClearRecentConnections();
-                    }}
-                  >
-                    {dictionary.sidebar.recentClearLabel}
-                  </Button>
-                ) : null}
-              </div>
-              {recentConnections.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  {recentConnections.map((connection) => {
-                    const key = `${connection.host}:${connection.port}`;
-                    const displayHost = connection.port
-                      ? `${connection.host}:${connection.port}`
-                      : connection.host;
-                    return (
-                      <Button
-                        key={key}
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="h-9 justify-between px-3 text-left"
-                        onClick={() => handleLaunchRecentConnection(connection)}
-                      >
-                        <span className="truncate font-medium">{connection.label}</span>
-                        <span className="text-[11px] text-muted-foreground">{displayHost}</span>
-                      </Button>
-                    );
-                  })}
+              <form className="grid gap-4" onSubmit={handleQuickConnect}>
+                <div className="grid gap-2">
+                  <Label htmlFor="pnet-ip">{dictionary.sidebar.ipLabel}</Label>
+                  <Input id="pnet-ip" placeholder={dictionary.sidebar.ipPlaceholder} value={ip} onChange={(event) => setIp(event.target.value)} />
                 </div>
-              ) : (
-                <p className="text-[11px] text-muted-foreground/70">
-                  {dictionary.sidebar.recentEmpty}
-                </p>
-              )}
-            </div>
-          </section>
-          <Separator className="bg-border/60" />
-
-          <section className="space-y-3 rounded-xl border border-border/60 bg-background/70 p-4">
-            <p className="text-sm font-semibold text-foreground/80">
-              {dictionary.sidebar.tipsTitle}
-            </p>
-            <ul className="space-y-2 text-xs text-muted-foreground">
-              {dictionary.sidebar.tips.map((tip) => (
-                <li key={tip} className="flex gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/50" aria-hidden />
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+                <div className="grid gap-2">
+                  <Label htmlFor="pnet-port">{dictionary.sidebar.portLabel}</Label>
+                  <Input id="pnet-port" type="number" inputMode="numeric" min={1} max={65535} value={port} onChange={(event) => setPort(sanitizePortValue(event.target.value))} />
+                </div>
+                <Button type="submit">{dictionary.sidebar.connectButton}</Button>
+              </form>
+              {formError ? (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  <Info className="mt-0.5 h-4 w-4" />
+                  <span>{formError}</span>
+                </div>
+              ) : null}
+              <div className="space-y-3 rounded-xl border border-border/60 bg-background/70 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-foreground/80">{dictionary.sidebar.recentTitle}</p>
+                  {recentConnections.length > 0 ? (
+                    <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground" onClick={() => { void handleClearRecentConnections(); }}>
+                      {dictionary.sidebar.recentClearLabel}
+                    </Button>
+                  ) : null}
+                </div>
+                {recentConnections.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {recentConnections.map((connection) => {
+                      const key = `${connection.host}:${connection.port}`;
+                      const displayHost = connection.port ? `${connection.host}:${connection.port}` : connection.host;
+                      return (
+                        <Button
+                          key={key}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-9 justify-between px-3 text-left"
+                          onClick={() => handleLaunchRecentConnection(connection)}
+                        >
+                          <span className="truncate font-medium">{connection.label}</span>
+                          <span className="text-[11px] text-muted-foreground">{displayHost}</span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/70">{dictionary.sidebar.recentEmpty}</p>
+                )}
+              </div>
+            </section>
+            <Separator className="bg-border/60" />
+            <section className="space-y-3 rounded-xl border border-border/60 bg-background/70 p-4">
+              <p className="text-sm font-semibold text-foreground/80">{dictionary.sidebar.tipsTitle}</p>
+              <ul className="space-y-2 text-xs text-muted-foreground">
+                {dictionary.sidebar.tips.map((tip) => (
+                  <li key={tip} className="flex gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/50" aria-hidden />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
         </div>
-      </aside>
+      )}
 
       <main className="flex flex-1 flex-col">
         <header className="flex h-16 items-center justify-between border-b bg-background/90 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -840,6 +794,9 @@ export function HomePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowWorkbench((v) => !v)} className="hidden lg:inline-flex">
+              {showWorkbench ? dictionary.sidebar.title : dictionary.sidebar.title}
+            </Button>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/settings">
                 <Settings2 className="h-4 w-4" />
@@ -920,6 +877,7 @@ export function HomePage() {
           </div>
         </section>
       </main>
+
     </div>
   );
 }

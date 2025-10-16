@@ -227,6 +227,30 @@ export function TelnetTerminal({
   dataDisposerRef.current = window.desktopBridge?.terminal.onData(({ id: incomingId, data }: { id: string; data: string }) => {
         if (incomingId === id) {
           terminal.write(data);
+          try {
+            // 简单解析常见网络设备提示符，提取设备名
+            // 匹配示例："R1>", "R1#", "[R1]", "<R1>"
+            const lines = data.split(/\r?\n/);
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              const m =
+                /^(?:\[|<)?([A-Za-z0-9._-]{1,32})(?:\]|>)?[#>\]]\s*$/.exec(trimmed) ||
+                /^(?:hostname\s+)([A-Za-z0-9._-]{1,32})\s*$/i.exec(trimmed);
+              if (m && m[1]) {
+                const candidate = m[1];
+                if (candidate && candidate !== (label || host)) {
+                  // 通过全局桥接的 onLabel 通道更新会话标签
+                  window.dispatchEvent(
+                    new CustomEvent("terminal:label", {
+                      detail: { id, label: candidate, host, port },
+                    }) as any
+                  );
+                }
+                break;
+              }
+            }
+          } catch {}
         }
       }) ?? null;
 
