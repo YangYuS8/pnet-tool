@@ -85,7 +85,12 @@ export function DesktopWindowChrome({ children }: DesktopWindowChromeProps) {
   }, []);
 
   if (!isDesktop) {
-    return <>{children}</>;
+    // 应用为桌面优先，非桌面返回时也保证最外层高度约束，避免不同环境下行为差异
+    return (
+      <div className="flex h-screen w-full flex-col bg-background text-foreground">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">{children}</div>
+      </div>
+    );
   }
 
   return (
@@ -124,7 +129,7 @@ export function DesktopWindowChrome({ children }: DesktopWindowChromeProps) {
             </WindowControlButton>
           </div>
         </header>
-        <div className="flex flex-1 flex-col overflow-hidden bg-background">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
           {children}
         </div>
       </div>

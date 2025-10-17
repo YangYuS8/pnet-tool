@@ -707,13 +707,7 @@ export function HomePage() {
   }, [handleTelnetAction]);
 
   return (
-    <div
-      className={cn(
-        isDesktop
-          ? "flex flex-1 min-h-0 bg-gradient-to-br from-background via-background to-muted/40"
-          : "flex min-h-screen bg-gradient-to-br from-background via-background to-muted/40"
-      )}
-    >
+    <div className={cn("flex flex-1 min-h-0 bg-gradient-to-br from-background via-background to-muted/40")}> 
       {/* 可折叠侧面板：连接工作台（不改变主区域占比，采用覆盖式抽屉） */}
       {showWorkbench && (
         <div className="fixed left-0 top-16 bottom-0 z-40 w-[320px] border-r bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-xl">
@@ -800,7 +794,7 @@ export function HomePage() {
         </div>
       )}
 
-      <main className="flex flex-1 flex-col">
+  <main className="flex min-h-0 flex-1 flex-col">
         <header className="flex h-16 items-center justify-between border-b bg-background/90 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/70">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-muted/60">
@@ -828,10 +822,10 @@ export function HomePage() {
           </div>
         </header>
 
-        <section className="flex flex-1 flex-col gap-4 px-6 py-6 overflow-hidden">
+  <section className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-6 overflow-hidden">
           <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-border/70 bg-background/80 p-5 shadow-sm overflow-hidden">
             <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row overflow-hidden">
-              <div className="flex min-h-0 w-full flex-col gap-3 overflow-hidden lg:max-w-[320px] lg:max-h-full">
+              <div className="flex min-h-0 w-full flex-col gap-3 overflow-hidden lg:basis-[320px] lg:shrink-0 lg:grow-0 lg:max-w-[320px] lg:max-h-full">
                 <SessionTabs
                   sessions={sessions.map((session) => ({
                     key: session.key,
@@ -849,7 +843,7 @@ export function HomePage() {
               </div>
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 {sessions.length > 0 ? (
-                  <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner">
+                  <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner">
                     {sessions.map((session) => {
                       const isActive = session.key === activeSessionKey;
                       return (

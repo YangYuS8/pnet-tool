@@ -344,6 +344,13 @@ export function TelnetTerminal({
         scheduleFit();
       });
       observer.observe(container);
+      // 同时观察父级尺寸，避免左侧列内部滚动或布局变化未传导到 xterm 容器
+      const parent = container.parentElement;
+      if (parent) {
+        try {
+          observer.observe(parent);
+        } catch {}
+      }
       resizeObserverRef.current = observer;
     }
 
