@@ -1,22 +1,66 @@
-name: Build and Release
+name: CI & Release
 
 permissions:
   contents: write
 
 on:
   push:
+    branches: [ main ]
     tags:
-      - "v*"
+      - 'v*'
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 env:
-  NODE_VERSION: "20"
-  PNPM_VERSION: "9"
+  NODE_VERSION: '20'
+  PNPM_VERSION: '10.17.0'
 
 jobs:
+  ci:
+    name: CI (lint, typecheck, web build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: dtinth/setup-github-actions-caching-for-turbo@v1
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build web (Turbopack)
+        run: pnpm run build:web:tp
+
+      - name: Upload .next artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          path: .next
+
   build-linux:
     name: Build Linux DEB (Tauri)
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    needs: [ci]
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -62,7 +106,6 @@ jobs:
 
       - name: Build Tauri (DEB)
         run: |
-          pnpm run build:web
           pnpm exec tauri build --bundles deb
 
       - name: Collect DEB artifact
@@ -97,7 +140,9 @@ jobs:
 
   build-windows:
     name: Build Windows MSI (Tauri)
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
+    needs: [ci]
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -194,10 +239,11 @@ jobs:
 
   release:
     name: Publish Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
     needs:
       - build-linux
       - build-windows
-    runs-on: ubuntu-latest
     steps:
       - name: Download artifacts (all)
         uses: actions/download-artifact@v4

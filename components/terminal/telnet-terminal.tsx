@@ -509,17 +509,35 @@ export function TelnetTerminal({
 
   useEffect(() => {
     if (isVisible && !previousVisibilityRef.current) {
-      scheduleFit();
+      // 在可见性从 false -> true 时，安排一次微任务与下一帧的两次 fit，避免布局抖动导致的残余空白
+      queueMicrotask(() => scheduleFit());
+      const raf = requestAnimationFrame(() => scheduleFit());
+      return () => cancelAnimationFrame(raf);
     }
     previousVisibilityRef.current = isVisible;
   }, [isVisible, scheduleFit]);
 
   // 增强：路由变化、窗口切换、任意布局改动后都重新 fit
   useEffect(() => {
-    if (isVisible && terminalRef.current && fitAddonRef.current) {
-      const rafId = requestAnimationFrame(() => scheduleFit());
-      return () => cancelAnimationFrame(rafId);
+    if (!isVisible || !terminalRef.current || !fitAddonRef.current || !containerRef.current) {
+      return;
     }
+    const rafId = requestAnimationFrame(() => scheduleFit());
+
+    // 当容器重新进入视口或尺寸发生微小变化时，触发额外的 fit
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          scheduleFit();
+        }
+      }
+    }, { root: null, threshold: [0, 0.1, 0.5, 1] });
+    io.observe(containerRef.current);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      io.disconnect();
+    };
   }, [isVisible, scheduleFit]);
 
   const actionButtonLabel = useMemo(() => {

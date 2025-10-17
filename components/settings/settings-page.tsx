@@ -25,7 +25,8 @@ export function SettingsPage() {
     setThemeReady(true);
   }, []);
 
-  const activeTheme = resolvedTheme === "dark" ? "dark" : "light";
+  // 仅在客户端完成一次性挂载后再读取 resolvedTheme，避免 SSR 与 CSR 不一致导致的水合失败
+  const activeTheme = themeReady && resolvedTheme === "dark" ? "dark" : "light";
 
   const handleThemeSelect = useCallback(
     (target: "light" | "dark") => {
@@ -142,7 +143,7 @@ export function SettingsPage() {
               >
                 <Sun className="h-4 w-4" />
                 {dictionary.appearanceSection.options.light}
-                {activeTheme === "light" ? <Check className="h-3.5 w-3.5" /> : null}
+                {themeReady && activeTheme === "light" ? <Check className="h-3.5 w-3.5" /> : null}
               </Button>
               <Button
                 type="button"
@@ -153,7 +154,7 @@ export function SettingsPage() {
               >
                 <Moon className="h-4 w-4" />
                 {dictionary.appearanceSection.options.dark}
-                {activeTheme === "dark" ? <Check className="h-3.5 w-3.5" /> : null}
+                {themeReady && activeTheme === "dark" ? <Check className="h-3.5 w-3.5" /> : null}
               </Button>
             </div>
           </div>

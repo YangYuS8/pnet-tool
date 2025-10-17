@@ -36,6 +36,16 @@ function setSettings(obj: unknown) {
 export function TauriBridgeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Detect Tauri runtime (v2): presence of __TAURI_INTERNALS__ or legacy markers
+    const isTauriEnv = Boolean(
+      (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ ||
+      (window as unknown as { __TAURI__?: unknown }).__TAURI__ ||
+      (window as unknown as { __TAURI_IPC__?: unknown }).__TAURI_IPC__
+    );
+    if (!isTauriEnv) {
+      // In plain web runtime, do not install desktopBridge to avoid mis-detection as desktop
+      return;
+    }
     const bridge = {
       getVersion: async () => (await invoke<string>("plugin:app|version")).toString(),
       ping: async () => "pong",

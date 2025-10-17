@@ -709,8 +709,9 @@ export function HomePage() {
   return (
     <div
       className={cn(
-        "flex min-h-screen bg-gradient-to-br from-background via-background to-muted/40",
-        isDesktop && "h-full min-h-0"
+        isDesktop
+          ? "flex flex-1 min-h-0 bg-gradient-to-br from-background via-background to-muted/40"
+          : "flex min-h-screen bg-gradient-to-br from-background via-background to-muted/40"
       )}
     >
       {/* 可折叠侧面板：连接工作台（不改变主区域占比，采用覆盖式抽屉） */}
@@ -855,7 +856,7 @@ export function HomePage() {
                         <div
                           key={session.key}
                           className={cn(
-                            "absolute inset-0 flex flex-col transition-opacity duration-200 overflow-hidden",
+                            "absolute inset-0 flex min-h-0 flex-col transition-opacity duration-200 overflow-hidden",
                             isActive ? "z-10 opacity-100" : "pointer-events-none opacity-0"
                           )}
                           aria-hidden={!isActive}
@@ -872,7 +873,7 @@ export function HomePage() {
                             mode={session.sessionId ? "attach" : "create"}
                             isVisible={isActive}
                             disposeOnUnmount={false}
-                            className="flex-1"
+                            className="flex-1 min-h-0"
                           />
                         </div>
                       );
