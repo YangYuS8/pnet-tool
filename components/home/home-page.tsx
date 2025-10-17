@@ -831,7 +831,7 @@ export function HomePage() {
         <section className="flex flex-1 flex-col gap-4 px-6 py-6 overflow-hidden">
           <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-border/70 bg-background/80 p-5 shadow-sm overflow-hidden">
             <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row overflow-hidden">
-              <div className="flex min-h-0 w-full flex-col gap-3 overflow-y-auto lg:max-w-[320px] lg:max-h-full">
+              <div className="flex min-h-0 w-full flex-col gap-3 overflow-hidden lg:max-w-[320px] lg:max-h-full">
                 <SessionTabs
                   sessions={sessions.map((session) => ({
                     key: session.key,

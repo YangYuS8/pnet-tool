@@ -47,14 +47,7 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build web (Turbopack)
-        run: pnpm run build:web:tp
-
-      - name: Upload .next artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: next-build
-          path: .next
+      # Skip building on normal push/PR per requirement; build only happens on version tags via jobs below.
 
   build-linux:
     name: Build Linux DEB (Tauri)
