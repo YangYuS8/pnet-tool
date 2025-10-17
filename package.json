@@ -5,18 +5,20 @@
   "description": "Electron 桌面端的 PNETLab Telnet 客户端，集成健康探测与协议处理自动化",
   "author": "YangYuS8",
   "main": "src-tauri",
+  "packageManager": "pnpm@10.17.0",
   "scripts": {
     "dev": "concurrently -k \"pnpm:dev:web\" \"pnpm:dev:tauri\"",
     "dev:web": "next dev --turbopack",
     "dev:tauri": "tauri dev",
-    "build": "pnpm run build:web:tp && cross-env RUSTFLAGS= tauri build",
+    "build": "turbo run build:web:tp --filter=. --force && cross-env RUSTFLAGS= tauri build",
     "build:web": "cross-env NODE_OPTIONS=--max-old-space-size=8192 NEXT_TELEMETRY_DISABLED=1 next build",
     "build:web:tp": "cross-env NODE_OPTIONS=--max-old-space-size=8192 NEXT_TELEMETRY_DISABLED=1 next build --turbopack",
+    "build:tauri": "cross-env RUSTFLAGS= tauri build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build:appimage": "pnpm run build:web:tp && cross-env RUSTFLAGS= tauri build --bundles appimage",
-    "build:deb": "pnpm run build:web:tp && cross-env RUSTFLAGS= tauri build --bundles deb",
-    "build:msi": "pnpm run build:web:tp && cross-env RUSTFLAGS= tauri build --bundles msi",
-    "build:binary": "pnpm run build:web:tp && cross-env RUSTFLAGS= tauri build --bundles none",
+    "build:appimage": "turbo run build:web:tp --filter=. --force && cross-env RUSTFLAGS= tauri build --bundles appimage",
+    "build:deb": "turbo run build:web:tp --filter=. --force && cross-env RUSTFLAGS= tauri build --bundles deb",
+    "build:msi": "turbo run build:web:tp --filter=. --force && cross-env RUSTFLAGS= tauri build --bundles msi",
+    "build:binary": "turbo run build:web:tp --filter=. --force && cross-env RUSTFLAGS= tauri build --bundles none",
     "install:linux": "bash ./scripts/install-linux.sh",
     "check:appimage-deps": "bash ./scripts/check-appimage-deps.sh",
     "lint": "eslint"
@@ -38,6 +40,7 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "turbo": "^2.5.8",
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

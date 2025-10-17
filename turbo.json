@@ -1,0 +1,51 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"globalDependencies": [
+		"**/.env*",
+		"src-tauri/tauri.conf.json"
+	],
+	"tasks": {
+		"lint": {
+			"outputs": []
+		},
+		"typecheck": {
+			"outputs": []
+		},
+		"build:web": {
+			"dependsOn": ["typecheck"],
+			"env": ["NODE_OPTIONS", "NEXT_TELEMETRY_DISABLED"],
+			"outputs": [
+				".next/**"
+			]
+		},
+		"build:web:tp": {
+			"dependsOn": ["typecheck"],
+			"env": ["NODE_OPTIONS", "NEXT_TELEMETRY_DISABLED"],
+			"outputs": [
+				".next/**"
+			]
+		},
+		"build:tauri": {
+			"dependsOn": ["build:web:tp"],
+			"env": ["RUSTFLAGS"],
+			"outputs": [
+				"src-tauri/target/**"
+			]
+		},
+		"build": {
+			"outputs": []
+		},
+		"dev:web": {
+			"cache": false,
+			"persistent": true
+		},
+		"dev:tauri": {
+			"cache": false,
+			"persistent": true
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		}
+	}
+}

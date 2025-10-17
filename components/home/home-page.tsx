@@ -155,7 +155,7 @@ export function HomePage() {
   const [sessions, setSessions] = useState<ManagedSession[]>([]);
   const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [showWorkbench, setShowWorkbench] = useState(true);
+  const [showWorkbench, setShowWorkbench] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [recentConnections, setRecentConnections] = useState<RecentConnectionRecord[]>(() => {
     if (typeof window === "undefined") {
@@ -294,6 +294,7 @@ export function HomePage() {
   // 从 localStorage 恢复上次的会话标签与参数（不恢复运行中的 PTY id）
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let restored = false;
     try {
       const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
       if (raw) {
@@ -304,8 +305,11 @@ export function HomePage() {
               .filter((v): v is PersistedSessionSnapshot => Boolean(v))
           : [];
         if (snapshots.length > 0) {
-          setSessions(
-            snapshots.map((s) => ({
+          setSessions((prev) => {
+            // 避免重复恢复：如果已有会话则不覆盖
+            if (prev.length > 0) return prev;
+            restored = true;
+            return snapshots.map((s) => ({
               key: s.key,
               sessionId: undefined,
               host: s.host,
@@ -314,12 +318,14 @@ export function HomePage() {
               autoConnectToken: generateAutoToken(),
               status: "idle",
               error: null,
-            }))
-          );
+            }));
+          });
         }
-        const storedActive = window.localStorage.getItem(SESSION_ACTIVE_STORAGE_KEY);
-        if (storedActive && snapshots.some((snapshot) => snapshot.key === storedActive)) {
-          setActiveSessionKey((prev) => prev ?? storedActive);
+        if (restored) {
+          const storedActive = window.localStorage.getItem(SESSION_ACTIVE_STORAGE_KEY);
+          if (storedActive && snapshots.some((snapshot) => snapshot.key === storedActive)) {
+            setActiveSessionKey((prev) => prev ?? storedActive);
+          }
         }
       }
     } catch (e) {
@@ -532,9 +538,24 @@ export function HomePage() {
       if (!request.host) {
         return;
       }
-      setIp(request.host);
-      setPort(sanitizePortValue(request.port));
-      createSessionEntry(request.host, request.port, request.label ?? null);
+      const trimmedHost = request.host.trim();
+      const portNumber = sanitizePortValue(request.port);
+      
+      // 检查是否已存在相同 host:port 的会话
+      const existing = sessionsRef.current.find(
+        (s) => s.host === trimmedHost && s.port === portNumber
+      );
+      
+      if (existing) {
+        // 如果已存在，直接跳转到该会话
+        setActiveSessionKey(existing.key);
+        return;
+      }
+      
+      // 否则创建新会话
+      setIp(trimmedHost);
+      setPort(portNumber);
+      createSessionEntry(trimmedHost, portNumber, request.label ?? null);
     },
     [createSessionEntry]
   );
@@ -806,10 +827,10 @@ export function HomePage() {
           </div>
         </header>
 
-        <section className="flex flex-1 flex-col gap-4 px-6 py-6">
-          <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-border/70 bg-background/80 p-5 shadow-sm">
-            <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
-              <div className="flex min-h-0 w-full flex-col gap-3 lg:max-w-[320px]">
+        <section className="flex flex-1 flex-col gap-4 px-6 py-6 overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-border/70 bg-background/80 p-5 shadow-sm overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row overflow-hidden">
+              <div className="flex min-h-0 w-full flex-col gap-3 overflow-y-auto lg:max-w-[320px] lg:max-h-full">
                 <SessionTabs
                   sessions={sessions.map((session) => ({
                     key: session.key,
@@ -825,16 +846,16 @@ export function HomePage() {
                   onReorder={handleTabReorder}
                 />
               </div>
-              <div className="flex min-h-0 flex-1">
+              <div className="flex min-h-0 flex-1 overflow-hidden">
                 {sessions.length > 0 ? (
-                  <div className="relative flex min-h-[420px] flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner">
+                  <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-inner">
                     {sessions.map((session) => {
                       const isActive = session.key === activeSessionKey;
                       return (
                         <div
                           key={session.key}
                           className={cn(
-                            "absolute inset-0 flex flex-col transition-opacity duration-200",
+                            "absolute inset-0 flex flex-col transition-opacity duration-200 overflow-hidden",
                             isActive ? "z-10 opacity-100" : "pointer-events-none opacity-0"
                           )}
                           aria-hidden={!isActive}

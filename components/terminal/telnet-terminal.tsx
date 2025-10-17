@@ -224,27 +224,32 @@ export function TelnetTerminal({
 
   const subscribeSessionStreams = useCallback(
     (id: string, terminal: XtermTerminal) => {
+      const lastLabelRef = { current: label || host };
   dataDisposerRef.current = window.desktopBridge?.terminal.onData(({ id: incomingId, data }: { id: string; data: string }) => {
         if (incomingId === id) {
           terminal.write(data);
           try {
-            // 简单解析常见网络设备提示符，提取设备名
-            // 匹配示例："R1>", "R1#", "[R1]", "<R1>"
+            // 实时解析常见网络设备提示符，持续更新设备名
+            // 匹配示例："R1>", "R1#", "[R1]", "<R1>", "Switch>", "[Huawei]"
             const lines = data.split(/\r?\n/);
             for (const line of lines) {
               const trimmed = line.trim();
               if (!trimmed) continue;
+              // 扩展正则：支持更多设备格式，包括 Cisco/Huawei/H3C 等
               const m =
-                /^(?:\[|<)?([A-Za-z0-9._-]{1,32})(?:\]|>)?[#>\]]\s*$/.exec(trimmed) ||
-                /^(?:hostname\s+)([A-Za-z0-9._-]{1,32})\s*$/i.exec(trimmed);
+                /^(?:\[|<)?([A-Za-z0-9._-]{1,32})(?:\]|>)?[#>]\s*$/.exec(trimmed) ||
+                /^\[([A-Za-z0-9._-]{1,32})\]\s*$/.exec(trimmed) ||
+                /^<([A-Za-z0-9._-]{1,32})>\s*$/.exec(trimmed) ||
+                /^([A-Za-z0-9._-]{1,32})\(config[^)]*\)[#>]\s*$/.exec(trimmed);
               if (m && m[1]) {
                 const candidate = m[1];
-                if (candidate && candidate !== (label || host)) {
+                if (candidate && candidate !== lastLabelRef.current) {
+                  lastLabelRef.current = candidate;
                   // 通过全局桥接的 onLabel 通道更新会话标签
                   window.dispatchEvent(
-                    new CustomEvent("terminal:label", {
+                    new CustomEvent<{ id: string; label: string; host: string; port: number }>("terminal:label", {
                       detail: { id, label: candidate, host, port },
-                    }) as any
+                    })
                   );
                 }
                 break;
@@ -271,7 +276,7 @@ export function TelnetTerminal({
         void cleanupSession(false);
       }) ?? null;
     },
-    [cleanupSession, dictionary.status.error]
+    [cleanupSession, dictionary.status.error, host, port, label]
   );
 
   const handleConnect = useCallback(async () => {
@@ -509,6 +514,14 @@ export function TelnetTerminal({
     previousVisibilityRef.current = isVisible;
   }, [isVisible, scheduleFit]);
 
+  // 增强：路由变化、窗口切换、任意布局改动后都重新 fit
+  useEffect(() => {
+    if (isVisible && terminalRef.current && fitAddonRef.current) {
+      const rafId = requestAnimationFrame(() => scheduleFit());
+      return () => cancelAnimationFrame(rafId);
+    }
+  }, [isVisible, scheduleFit]);
+
   const actionButtonLabel = useMemo(() => {
     if (status === "connecting") {
       return dictionary.connectingButton;
@@ -538,44 +551,43 @@ export function TelnetTerminal({
   };
 
   return (
-    <div className={cn("flex w-full flex-1 flex-col gap-4", className)}>
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {showControls ? (
-            <>
+    <div className={cn("flex w-full h-full flex-col", className)}>
+      {showControls && (
+        <>
+          <div className="flex shrink-0 flex-col gap-2 pb-3">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 onClick={handleActionClick}
                 disabled={isActionDisabled}
                 variant={status === "connected" ? "secondary" : "default"}
+                size="sm"
               >
                 {actionButtonLabel}
               </Button>
               <span className="text-xs text-muted-foreground">{statusLabel}</span>
-            </>
-          ) : (
-            <span className="text-xs font-medium text-muted-foreground">{statusLabel}</span>
-          )}
-        </div>
-        {!isDesktopAvailable && (
-          <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-            {dictionary.desktopOnlyHint}
-          </p>
-        )}
-        {status !== "connected" && host === "" && (
-          <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-            {dictionary.requireIp}
-          </p>
-        )}
-        {error && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
-      {showControls && <Separator className="bg-border/60" />}
+            </div>
+            {!isDesktopAvailable && (
+              <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                {dictionary.desktopOnlyHint}
+              </p>
+            )}
+            {status !== "connected" && host === "" && (
+              <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                {dictionary.requireIp}
+              </p>
+            )}
+            {error && (
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
+          <Separator className="shrink-0 bg-border/60" />
+        </>
+      )}
       <div
         ref={containerRef}
-        className="flex-1 min-h-[360px] w-full overflow-hidden rounded-lg border border-border bg-card/90 shadow-inner"
+        className="flex-1 min-h-0 w-full overflow-hidden rounded-lg border border-border bg-card/90 shadow-inner"
       />
     </div>
   );

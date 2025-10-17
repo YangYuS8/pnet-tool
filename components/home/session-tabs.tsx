@@ -165,17 +165,17 @@ export function SessionTabs({
 
   return (
     <Fragment>
-      <div className="flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between">
         <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
           {dictionary.sessionTabs.headerLabel}
         </p>
         <p className="text-xs text-muted-foreground/80">{sessions.length}</p>
       </div>
       {onReorder ? (
-        <p className="text-[11px] text-muted-foreground/70">{dictionary.sessionTabs.reorderHint}</p>
+        <p className="shrink-0 text-[11px] text-muted-foreground/70">{dictionary.sessionTabs.reorderHint}</p>
       ) : null}
       <div
-        className="flex max-h-full flex-1 flex-col gap-2 overflow-y-auto pr-1"
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1"
         onDragOver={handleContainerDragOver}
         onDrop={handleContainerDrop}
         role="list"
